@@ -142,8 +142,8 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.cfg = config_manager
         self.setWindowTitle("Налаштування перекладача SCUM Chat")
-        self.setMinimumWidth(560)
-        self.resize(580, 520)
+        self.setMinimumWidth(640)
+        self.resize(680, 540)
 
         self.setStyleSheet("""
             QDialog {
@@ -169,10 +169,10 @@ class SettingsDialog(QDialog):
                 border-bottom: none;
                 border-top-left-radius: 6px;
                 border-top-right-radius: 6px;
-                padding: 8px 16px;
+                padding: 8px 13px;
                 font-weight: 600;
                 font-size: 12px;
-                margin-right: 4px;
+                margin-right: 3px;
             }
             QTabBar::tab:selected {
                 background-color: #1e293b;
@@ -254,6 +254,8 @@ class SettingsDialog(QDialog):
         main_layout.setSpacing(12)
 
         self.tabs = QTabWidget(self)
+        self.tabs.setUsesScrollButtons(False)
+        self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
 
         # ────────── ТАБ 1: Основні налаштування ──────────
         tab_general = QWidget()
