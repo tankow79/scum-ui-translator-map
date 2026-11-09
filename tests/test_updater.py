@@ -71,8 +71,8 @@ def test_fetch_latest_release_info_with_update():
         "html_url": "https://github.com/tankow79/scum-ui-translator-map/releases/tag/v1.1.0",
         "assets": [
             {
-                "name": "SCUM_Chat_Translator_v1.0.0.zip",
-                "browser_download_url": "https://github.com/tankow79/scum-ui-translator-map/releases/download/v1.1.0/SCUM_Chat_Translator_v1.0.0.zip",
+                "name": "SCUM_Chat_Translator_v1.1.0.zip",
+                "browser_download_url": "https://github.com/tankow79/scum-ui-translator-map/releases/download/v1.1.0/SCUM_Chat_Translator_v1.1.0.zip",
                 "size": 42000000
             },
             {
@@ -97,22 +97,22 @@ def test_fetch_latest_release_info_with_update():
     assert info.version == "1.1.0"
     assert info.is_newer is True
     assert info.is_zip is True
-    assert info.asset_name == "SCUM_Chat_Translator_v1.0.0.zip"
+    assert info.asset_name == "SCUM_Chat_Translator_v1.1.0.zip"
     assert "https://" in info.download_url
     assert "Що нового" in info.body
 
 
 def test_fetch_latest_release_info_already_up_to_date():
     mock_github_response = {
-        "tag_name": "v1.0.0",
-        "name": "SCUM Translator v1.0.0",
-        "body": "Initial release",
+        "tag_name": "v1.1.0",
+        "name": "SCUM Translator v1.1.0",
+        "body": "Version 1.1.0 release",
         "published_at": "2026-11-09T10:00:00Z",
-        "html_url": "https://github.com/tankow79/scum-ui-translator-map/releases/tag/v1.0.0",
+        "html_url": "https://github.com/tankow79/scum-ui-translator-map/releases/tag/v1.1.0",
         "assets": []
     }
 
-    checker = UpdateChecker(current_version="1.0.0")
+    checker = UpdateChecker(current_version="1.1.0")
 
     mock_resp = MagicMock()
     mock_resp.status = 200
