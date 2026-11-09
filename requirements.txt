@@ -1,0 +1,3 @@
+PyQt6>=6.6.0
+deep-translator>=1.11.4
+pynput>=1.7.6

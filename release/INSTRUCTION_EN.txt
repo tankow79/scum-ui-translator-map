@@ -1,0 +1,52 @@
+==================================================================================
+  Real-Time SCUM Game Chat Translator via Google Translate
+  with Transparent HUD Overlay and Quick In-Game Translator.
+==================================================================================
+
+HOTKEYS:
+  • [ T ]      — Open game chat and Quick Translation input:
+                 - Type your message in your native language (e.g. Ukrainian/other).
+                 - Instant live translation appears in target language (e.g. English).
+                 - Press Enter — translation is automatically copied to your clipboard.
+                 - Press Ctrl+V and Enter in SCUM to send the translated text.
+
+  • [ Esc ]    — Instantly close all tool windows and return mouse focus to SCUM:
+                 - Immediately hides Quick Chat, Map, Points List, or Settings.
+                 - Seamlessly restores mouse aim and focus to SCUM.
+                 - If no tool window is open, Esc acts as regular SCUM menu key.
+
+  • [ F8 ]     — Toggle HUD Overlay Visibility (Show/Hide):
+                 - [● ON]  — Green badge: Chat overlay is active and visible.
+                 - [● OFF] — Red badge: Chat overlay is hidden.
+
+  • [ F9 ]     — Layout / Customization Mode (Lock / Unlock):
+                 - Shows window borders for overlay and status badge.
+                 - Drag the overlay anywhere on your screen.
+                 - Resize chat using the bottom-right corner grip.
+                 - Press F9 again to lock positions in place.
+
+  • [ Ctrl+M ] — Interactive SCUM Island Map and Saved Points:
+                 - Opens ONLY when SCUM is active (auto-hides on Alt+Tab).
+                 - Map is centered on screen, Saved Points window docked below.
+                 - Mouse Wheel: Smooth zoom in/out centered under your cursor.
+                 - Left Mouse Drag: Pan the map.
+                 - Waypoints are shown as pins directly on coordinates.
+                 - Pin colors can be changed (Red, Blue, Green, Gold, etc.).
+                 - Hovering over a pin shows full details (Name, Time, Sector, Coordinates).
+                 - Auto-parses coordinates from chat formatted as:
+                   {X=... Y=... Z=...|...} with automatic naming.
+                 - Points window features:
+                   * Quick color picker
+                   * Live name editing with instant auto-save
+                   * "On Map" button (focus and zoom to pin)
+                   * "Copy" button (copy coordinates to clipboard)
+                   * "Delete" button
+                 - Points persist across launches in points.json!
+
+==================================================================================
+DISCLAIMER:
+  This software is an open-source overlay tool provided for educational and 
+  accessibility purposes. The author/developer assumes NO responsibility or 
+  liability for any bans, game penalties, or consequences resulting from using 
+  this tool. Use at your own risk.
+==================================================================================
