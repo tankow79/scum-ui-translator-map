@@ -331,9 +331,13 @@ class PointRowWidget(QFrame):
 
     def _pick_custom_color(self):
         initial = QColor(self.point.color if getattr(self.point, "color", None) else "#38bdf8")
-        col = QColorDialog.getColor(initial, self, "Оберіть колір шпильки для карти")
-        if col.isValid():
-            self._set_color(col.name())
+        dlg = QColorDialog(initial, self)
+        dlg.setWindowTitle("Оберіть колір шпильки для карти")
+        dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        if dlg.exec():
+            col = dlg.selectedColor()
+            if col.isValid():
+                self._set_color(col.name())
 
     def _on_name_edited(self):
         new_name = self.txt_name.text().strip()

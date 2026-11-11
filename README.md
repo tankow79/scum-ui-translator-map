@@ -109,7 +109,7 @@ Overcome language barriers on international SCUM servers without leaving the gam
 ### Option 1: Pre-Built Standalone Release (Recommended for Players)
 No Python installation or configuration is needed.
 
-1. Download the latest release archive (`SCUM_Chat_Translator_v1.1.0.zip` or standalone `.exe`) from **[GitHub Releases](https://github.com/tankow79/scum-ui-translator-map/releases)**.
+1. Download the latest release archive (`SCUM_Chat_Translator_v2.0.0.zip` or standalone `.exe`) from **[GitHub Releases](https://github.com/tankow79/scum-ui-translator-map/releases)**.
 2. Extract the archive into any preferred folder on your PC (e.g. `C:\Games\SCUM_Translator\`).
 3. Ensure `config.json` and `assets/` reside alongside `SCUM_Chat_Translator.exe`.
 4. Run **`SCUM_Chat_Translator.exe`**.
@@ -289,7 +289,7 @@ The compiled binary will be placed in `dist/SCUM_Chat_Translator.exe`.
 ### Спосіб 1: Готовий реліз (Рекомендовано для гравців)
 Встановлювати Python не потрібно.
 
-1. Завантажте готовий реліз (`SCUM_Chat_Translator_v1.1.0.zip` або `.exe`) зі сторінки **[GitHub Releases](https://github.com/tankow79/scum-ui-translator-map/releases)**.
+1. Завантажте готовий реліз (`SCUM_Chat_Translator_v2.0.0.zip` або `.exe`) зі сторінки **[GitHub Releases](https://github.com/tankow79/scum-ui-translator-map/releases)**.
 2. Розпакуйте вміст архіву у будь-яку зручну папку на диску (наприклад, `C:\Games\SCUM_Translator\`).
 3. Переконайтеся, що поруч із `SCUM_Chat_Translator.exe` знаходяться файли `config.json` та папка `assets/`.
 4. Запустіть **`SCUM_Chat_Translator.exe`**.

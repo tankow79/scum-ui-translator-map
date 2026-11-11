@@ -50,3 +50,16 @@ def test_parser_format_time():
     parser = ScumLogParser("dummy.log", lambda *a: None)
     assert parser._format_time("2026.11.03-20.51.28") == "20:51:28"
     assert parser._format_time("invalid_format") == "invalid_format"
+
+def test_parser_squad_message():
+    captured = []
+    parser = ScumLogParser("dummy.log", lambda *args: captured.append(args))
+
+    line = "[2026.11.03-18.00.00:100][ 88]LogSCUM: Message: (Squad) Teammate1: enemy at bunker"
+    parser._process_line(line)
+
+    assert len(captured) == 1
+    t, sender, msg, m_type = captured[0]
+    assert sender == "(Squad) Teammate1"
+    assert msg == "enemy at bunker"
+    assert m_type == "squad"

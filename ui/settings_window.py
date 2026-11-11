@@ -26,11 +26,18 @@ class HotkeyButton(QPushButton):
         super().__init__(parent)
         self.current_hotkey = current_hotkey
         self.is_recording = False
-        self.setText(current_hotkey)
+        self.setText(current_hotkey if current_hotkey else "— Не призначено —")
         self.setFixedWidth(140)
         self.setFixedHeight(30)
         self.update_style()
         self.clicked.connect(self.start_recording)
+
+    def clear_hotkey(self):
+        self.current_hotkey = ""
+        self.is_recording = False
+        self.setText("— Не призначено —")
+        self.update_style()
+        self.hotkey_changed.emit("")
 
     def update_style(self):
         if self.is_recording:
@@ -73,9 +80,15 @@ class HotkeyButton(QPushButton):
 
         key = event.key()
 
+        # Натискання Delete або Backspace очищує бінд
+        if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            self.clear_hotkey()
+            event.accept()
+            return
+
         if key == Qt.Key.Key_Escape:
             self.is_recording = False
-            self.setText(self.current_hotkey)
+            self.setText(self.current_hotkey if self.current_hotkey else "— Не призначено —")
             self.update_style()
             event.accept()
             return
@@ -262,6 +275,32 @@ class SettingsDialog(QDialog):
         v_general = QVBoxLayout(tab_general)
         v_general.setContentsMargins(8, 12, 8, 12)
         v_general.setSpacing(12)
+
+        # 0.1 Мова інтерфейсу програми
+        r_ui_lang = QHBoxLayout()
+        lbl_ui_lang = QLabel("Мова інтерфейсу програми:")
+        lbl_ui_lang.setFixedWidth(170)
+        self.combo_ui_lang = QComboBox()
+        self.combo_ui_lang.addItem("🇺🇦 Українська", "uk")
+        self.combo_ui_lang.addItem("🇬🇧 English", "en")
+        self.combo_ui_lang.addItem("🇷🇺 Русский", "ru")
+        r_ui_lang.addWidget(lbl_ui_lang)
+        r_ui_lang.addWidget(self.combo_ui_lang)
+        v_general.addLayout(r_ui_lang)
+
+        # 0.2 Режим "Тільки Карта"
+        self.chk_enable_chat = QCheckBox("Увімкнути HUD-перекладач чату (зняти для режиму 'Тільки Карта')")
+        v_general.addWidget(self.chk_enable_chat)
+
+        # 0.3 Автозапуск Windows
+        self.chk_autostart = QCheckBox("Автозапуск програми разом із завантаженням Windows")
+        v_general.addWidget(self.chk_autostart)
+
+        # Розділювач
+        line0 = QFrame()
+        line0.setFrameShape(QFrame.Shape.HLine)
+        line0.setStyleSheet("border: none; border-top: 1px solid #334155; margin: 4px 0;")
+        v_general.addWidget(line0)
 
         # 1. Шлях до логів SCUM
         r_log = QHBoxLayout()
@@ -458,8 +497,13 @@ class SettingsDialog(QDialog):
         lbl_k_chat = QLabel("💬 Відкриття чату SCUM:")
         lbl_k_chat.setFixedWidth(200)
         self.btn_k_chat = HotkeyButton(self.cfg.get("hotkey_quick_chat", "T"))
+        btn_clr_chat = QPushButton("❌")
+        btn_clr_chat.setFixedSize(26, 26)
+        btn_clr_chat.setToolTip("Скинути гарячу клавішу")
+        btn_clr_chat.clicked.connect(self.btn_k_chat.clear_hotkey)
         r_k_chat.addWidget(lbl_k_chat)
         r_k_chat.addWidget(self.btn_k_chat)
+        r_k_chat.addWidget(btn_clr_chat)
         r_k_chat.addStretch()
         v_keys.addLayout(r_k_chat)
 
@@ -468,8 +512,13 @@ class SettingsDialog(QDialog):
         lbl_k_lock = QLabel("🔒 Налаштування положення (F9):")
         lbl_k_lock.setFixedWidth(200)
         self.btn_k_lock = HotkeyButton(self.cfg.get("hotkey_toggle_lock", "F9"))
+        btn_clr_lock = QPushButton("❌")
+        btn_clr_lock.setFixedSize(26, 26)
+        btn_clr_lock.setToolTip("Скинути гарячу клавішу")
+        btn_clr_lock.clicked.connect(self.btn_k_lock.clear_hotkey)
         r_k_lock.addWidget(lbl_k_lock)
         r_k_lock.addWidget(self.btn_k_lock)
+        r_k_lock.addWidget(btn_clr_lock)
         r_k_lock.addStretch()
         v_keys.addLayout(r_k_lock)
 
@@ -478,8 +527,13 @@ class SettingsDialog(QDialog):
         lbl_k_vis = QLabel("👁 Показати / Сховати (F8):")
         lbl_k_vis.setFixedWidth(200)
         self.btn_k_vis = HotkeyButton(self.cfg.get("hotkey_toggle_visibility", "F8"))
+        btn_clr_vis = QPushButton("❌")
+        btn_clr_vis.setFixedSize(26, 26)
+        btn_clr_vis.setToolTip("Скинути гарячу клавішу")
+        btn_clr_vis.clicked.connect(self.btn_k_vis.clear_hotkey)
         r_k_vis.addWidget(lbl_k_vis)
         r_k_vis.addWidget(self.btn_k_vis)
+        r_k_vis.addWidget(btn_clr_vis)
         r_k_vis.addStretch()
         v_keys.addLayout(r_k_vis)
 
@@ -488,8 +542,13 @@ class SettingsDialog(QDialog):
         lbl_k_map = QLabel("🗺 Відкрити Карту та Точки:")
         lbl_k_map.setFixedWidth(200)
         self.btn_k_map = HotkeyButton(self.cfg.get("hotkey_toggle_map", "Ctrl+M"))
+        btn_clr_map = QPushButton("❌")
+        btn_clr_map.setFixedSize(26, 26)
+        btn_clr_map.setToolTip("Скинути гарячу клавішу")
+        btn_clr_map.clicked.connect(self.btn_k_map.clear_hotkey)
         r_k_map.addWidget(lbl_k_map)
         r_k_map.addWidget(self.btn_k_map)
+        r_k_map.addWidget(btn_clr_map)
         r_k_map.addStretch()
         v_keys.addLayout(r_k_map)
 
@@ -707,6 +766,14 @@ class SettingsDialog(QDialog):
             self.badge_fade.setText(f"{v} сек")
 
     def load_settings(self):
+        ui_lang = self.cfg.get("ui_language", "uk")
+        idx_ui = self.combo_ui_lang.findData(ui_lang)
+        if idx_ui >= 0:
+            self.combo_ui_lang.setCurrentIndex(idx_ui)
+
+        self.chk_enable_chat.setChecked(self.cfg.get("enable_chat_translator", True))
+        self.chk_autostart.setChecked(self.cfg.get("auto_start", True))
+
         self.txt_log_path.setText(self.cfg.get("log_file_path", r"%LOCALAPPDATA%\SCUM\Saved\Logs\SCUM.log"))
 
         in_lang = self.cfg.get("target_language", "uk")
@@ -823,6 +890,19 @@ class SettingsDialog(QDialog):
             self.txt_log_path.setText(file_path)
 
     def save_settings(self):
+        old_ui_lang = self.cfg.get("ui_language", "uk")
+        new_ui_lang = self.combo_ui_lang.currentData()
+        self.cfg.set("ui_language", new_ui_lang)
+        self.cfg.set("enable_chat_translator", self.chk_enable_chat.isChecked())
+        
+        autostart_val = self.chk_autostart.isChecked()
+        self.cfg.set("auto_start", autostart_val)
+        try:
+            from utils.autostart import set_autostart
+            set_autostart(autostart_val)
+        except Exception as e:
+            print(f"[Settings] Помилка встановлення автозапуску: {e}")
+
         self.cfg.set("log_file_path", self.txt_log_path.text().strip())
         self.cfg.set("target_language", self.combo_in_lang.currentData())
         self.cfg.set("show_original", self.chk_show_orig.isChecked())

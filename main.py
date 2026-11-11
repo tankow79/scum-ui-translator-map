@@ -58,9 +58,9 @@ class AppController(QObject):
         if ignore_own and sender.lower() == own_nick:
             return
 
-        # 2. Чорний список гравців: повідомлення не перекладаються, а виводяться мовою оригіналу
+        # 2. Чорний список гравців: повідомлення не перекладаються, а негайно виводяться мовою оригіналу
         blacklist = [b.strip().lower() for b in self.cfg.get("blacklist_nicknames", []) if isinstance(b, str) and b.strip()]
-        if sender.strip().lower() in blacklist:
+        if any(b in sender.strip().lower() for b in blacklist):
             self.translated_ready.emit(time_str, sender, msg, msg, "orig", msg_type)
             return
 
@@ -167,16 +167,23 @@ def main():
 
     controller.coordinate_detected.connect(on_coordinate_detected)
 
-    def toggle_map_and_points():
+    # Флаг ручного відкриття карти через трей або інтерфейс для автономної роботи без гри
+    is_standalone_map_mode = False
+
+    def toggle_map_and_points(force_standalone: bool = False):
+        nonlocal is_standalone_map_mode
         if map_win.isVisible() or points_win.isVisible():
             map_win.hide()
             points_win.hide()
+            is_standalone_map_mode = False
             restore_game_focus()
         else:
-            # Вікна карти та списку точок відкриваються ТІЛЬКИ всередині гри SCUM
-            if not is_game_foreground("scum", allow_own_process=True):
-                print("[Main] Карта та список точок відкриваються тільки у вікні гри SCUM.")
-                return
+            in_game = is_game_foreground("scum", allow_own_process=True)
+            if not in_game and not force_standalone:
+                # Дозволяємо відкриття карти навіть поза грою, позначаючи її як standalone
+                is_standalone_map_mode = True
+            elif force_standalone:
+                is_standalone_map_mode = True
 
             try:
                 fg = user32.GetForegroundWindow()
@@ -318,10 +325,12 @@ def main():
                 overlay.hide()
             if status_badge.isVisible():
                 status_badge.hide()
-            if map_win.isVisible():
-                map_win.hide()
-            if points_win.isVisible():
-                points_win.hide()
+            # Якщо карта відкрита вручну користувачем (standalone) - не ховаємо її при згортанні/відсутності SCUM
+            if not is_standalone_map_mode:
+                if map_win.isVisible():
+                    map_win.hide()
+                if points_win.isVisible():
+                    points_win.hide()
         else:
             # Значок статусу (ON/OFF) завжди відображається у грі
             if not status_badge.isVisible():
@@ -349,7 +358,21 @@ def main():
         map_win.canvas.toggle_grid(cfg.get("map_show_grid", True))
         map_win.canvas.toggle_keypads(cfg.get("map_show_keypads", True))
         update_registered_hotkeys()
-        log_parser.set_log_path(cfg.get_resolved_log_path())
+        
+        nonlocal log_parser
+        enable_chat = cfg.get("enable_chat_translator", True)
+        if enable_chat:
+            if log_parser is None:
+                log_parser = ScumLogParser(cfg.get_resolved_log_path(), on_new_log_message)
+                log_parser.start()
+            else:
+                log_parser.set_log_path(cfg.get_resolved_log_path())
+        else:
+            if log_parser is not None:
+                log_parser.stop()
+                log_parser = None
+            if overlay.isVisible():
+                overlay.hide()
 
     settings_dialog.settings_changed.connect(on_settings_changed)
 
@@ -376,13 +399,17 @@ def main():
 
     # Парсер логів гри SCUM
     resolved_log_path = cfg.get_resolved_log_path()
-    print(f"[Main] Моніторинг логу SCUM: {resolved_log_path}")
+    log_parser = None
 
     def on_new_log_message(time_str: str, sender: str, msg: str, msg_type: str):
         controller.raw_message_received.emit(time_str, sender, msg, msg_type)
 
-    log_parser = ScumLogParser(resolved_log_path, on_new_log_message)
-    log_parser.start()
+    if cfg.get("enable_chat_translator", True):
+        print(f"[Main] Моніторинг логу SCUM: {resolved_log_path}")
+        log_parser = ScumLogParser(resolved_log_path, on_new_log_message)
+        log_parser.start()
+    else:
+        print("[Main] Режим 'Тільки Карта': читання логу та перекладач вимкнено.")
 
     # Системний трей
     tray = QSystemTrayIcon(QIcon(create_tray_icon_pixmap(has_update=False)), app)
@@ -437,7 +464,7 @@ def main():
     tray_menu.addAction(action_chat)
 
     action_map = QAction(f"🗺 Карта та Точки ({cfg.get('hotkey_toggle_map', 'Ctrl+M')})", app)
-    action_map.triggered.connect(toggle_map_and_points)
+    action_map.triggered.connect(lambda: toggle_map_and_points(force_standalone=True))
     tray_menu.addAction(action_map)
 
     action_lock = QAction("🔒/🔓 Режим налаштування (F9)", app)

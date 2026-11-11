@@ -125,5 +125,19 @@ class ScumLogParser:
             if msg.startswith('"') and msg.endswith('"') and len(msg) >= 2:
                 msg = msg[1:-1].strip()
 
+            # Визначення повідомлення загону / скваду (Squad chat)
+            # В SCUM логах чат скваду маркується префіксами у відправнику або повідомленні:
+            # Наприклад: "Message: (Squad) Nickname: hello", "(Team) Nick", "Nickname (Squad): hello", "[Squad] msg"
+            lower_sender = sender.lower()
+            lower_msg = msg.lower()
+            if (
+                "(squad)" in lower_sender or "[squad]" in lower_sender or
+                "(team)" in lower_sender or "[team]" in lower_sender or
+                lower_sender.startswith("squad ") or lower_sender.startswith("team ") or
+                lower_msg.startswith("(squad)") or lower_msg.startswith("[squad]") or
+                lower_msg.startswith("(team)") or lower_msg.startswith("[team]")
+            ):
+                msg_type = "squad"
+
             if msg:
                 self.on_message(time_str, sender, msg, msg_type)

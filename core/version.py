@@ -4,8 +4,8 @@
 
 from typing import Tuple
 
-__version__ = "1.1.0"
-__app_name__ = "SCUM Chat Translator & Tactical Map"
+__version__ = "2.0.0"
+__app_name__ = "SCUM Tactical Map & Real-Time Chat Translator"
 GITHUB_OWNER = "tankow79"
 GITHUB_REPO = "scum-ui-translator-map"
 GITHUB_REPO_URL = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"

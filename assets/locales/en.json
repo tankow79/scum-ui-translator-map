@@ -1,0 +1,70 @@
+{
+  "app_name": "SCUM Tactical Map & Chat Translator",
+  "tray": {
+    "open_chat": "💬 Open Translator (T)",
+    "open_map": "🗺 Open Tactical Map ({hotkey})",
+    "close_map": "❌ Close Tactical Map ({hotkey})",
+    "map_and_points": "🗺 Map & Waypoints ({hotkey})",
+    "toggle_lock": "🔒/🔓 Position Setting Mode (F9)",
+    "toggle_vis": "👁 Show/Hide Overlay (F8)",
+    "test_msg": "🧪 Send Test Message",
+    "update_btn": "⚡ Update Program (1-click)",
+    "update_btn_version": "⚡ Update to v{version} (1-click)",
+    "check_updates": "🔄 Check for Updates",
+    "settings": "⚙ Settings",
+    "exit": "🚪 Exit Program",
+    "tooltip": "SCUM Chat Translator & Tactical Map v{version}",
+    "tooltip_update": "SCUM Chat Translator v{version} [🔥 Update Available v{new_version}!]",
+    "update_avail_title": "SCUM Translator Update Available",
+    "update_avail_body": "A new version v{version} is available!\nClick here or in the tray menu to update in 1-click."
+  },
+  "overlay": {
+    "lock": "🔒 Lock",
+    "unlock": "🔓 Adjust",
+    "placeholder_input": "Translation will appear here...",
+    "hint_input": "💡 <b>Enter</b> — copy | <b>Esc</b> — close",
+    "copy_btn": "📋 Copy",
+    "clear_history": "Clear message history",
+    "open_map": "Open SCUM Map and points list (Ctrl+M)",
+    "open_settings": "Open Settings",
+    "test_btn": "Test"
+  },
+  "settings": {
+    "title": "SCUM Chat & Tactical Map Settings",
+    "tab_general": "🌐 General & Language",
+    "tab_hud": "🎨 Appearance & HUD",
+    "tab_keys": "⌨ Hotkeys",
+    "tab_map": "🗺 Map & Coordinates",
+    "ui_language": "App Interface Language:",
+    "enable_chat": "Enable HUD chat translator and log reader (uncheck for 'Map Only' mode)",
+    "autostart": "Launch application on Windows startup",
+    "target_lang": "Incoming chat translation language:",
+    "show_original": "Show original text below translation",
+    "ignore_own": "Ignore my own in-game messages",
+    "own_nickname": "My in-game nickname (SCUM):",
+    "save_btn": "💾 Save Settings",
+    "cancel_btn": "Cancel",
+    "clear_bind": "Clear",
+    "press_key": "Press key..."
+  },
+  "map": {
+    "title": "SCUM Interactive Tactical Map",
+    "style_regular": "Satellite (Regular)",
+    "style_tactical": "Tactical",
+    "show_grid": "Sector Grid (D0-Z4)",
+    "show_keypads": "Keypads (k1-k9)",
+    "filter_all": "All",
+    "cursor_sector": "Sector: {sector} {keypad}",
+    "pin_color_title": "Choose map pin color",
+    "custom_color": "🎨 Choose custom color..."
+  },
+  "points": {
+    "title": "Saved GPS Waypoints",
+    "search_placeholder": "🔍 Search by title or sector...",
+    "btn_on_map": "🗺 On Map",
+    "btn_copy": "📋 Copy",
+    "btn_delete": "Delete",
+    "btn_clear_all": "🗑 Clear All",
+    "base_players_placeholder": "Base players: e.g. Tanko, John"
+  }
+}

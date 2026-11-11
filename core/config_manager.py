@@ -50,7 +50,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "points_y": -1,
     "points_width": 960,
     "points_height": 240,
-    "auto_check_updates": True
+    "auto_check_updates": True,
+    "enable_chat_translator": True,   # Можливість повністю вимкнути чат і лог-парсер (режим "Тільки Карта")
+    "ui_language": "uk",              # Мова інтерфейсу: "uk", "en", "ru"
+    "auto_start": True                # Автозапуск разом із Windows
 }
 
 

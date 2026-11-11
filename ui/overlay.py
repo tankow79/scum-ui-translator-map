@@ -814,8 +814,8 @@ class ChatOverlay(QWidget):
         html_parts = []
         for e in visible_entries:
             # Автентична колірна гама чату SCUM 1:1 з грою:
-            if e.sender.lower() == own_nick:
-                # Власний нікнейм / сквад — соковитий зелений SCUM Green (#4ade80)
+            if e.sender.lower() == own_nick or e.msg_type in ("squad", "team"):
+                # Власний нікнейм / повідомлення загону (скваду) — соковитий зелений SCUM Green (#4ade80)
                 sender_color = "#4ade80"
                 msg_color = "#4ade80"
                 trans_color = "#4ade80"
@@ -836,7 +836,7 @@ class ChatOverlay(QWidget):
             safe_sender = html.escape(e.sender)
             safe_orig = html.escape(e.original)
             safe_trans = html.escape(e.translated)
-            is_same = (safe_orig.strip() == safe_trans.strip()) or (e.src_lang == target_lang) or (e.src_lang == "orig")
+            is_same = (safe_orig.strip() == safe_trans.strip()) or (e.src_lang == target_lang) or (e.src_lang in ("orig", "blacklist"))
 
             part = (
                 f'<div style="margin-bottom:6px; font-family:\'Segoe UI\',sans-serif;'
