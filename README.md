@@ -6,7 +6,7 @@
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg?style=for-the-badge&logo=python)](https://www.python.org/)
 [![GUI Framework](https://img.shields.io/badge/PyQt-6.6%2B-green.svg?style=for-the-badge&logo=qt)](https://www.riverbankcomputing.com/software/pyqt/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6.svg?style=for-the-badge&logo=windows)](https://microsoft.com)
-[![Tests](https://img.shields.io/badge/Tests-47%20Passed-brightgreen.svg?style=for-the-badge)](https://pytest.org/)
+[![Tests](https://img.shields.io/badge/Tests-52%20Passed-brightgreen.svg?style=for-the-badge)](https://pytest.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
 **An all-in-one in-game tactical suite for SCUM (Steam): high-precision interactive tactical island map with automatic GPS coordinate interception, sector grid (D0–Z4 / k1–k9), categorized waypoints, alongside a seamless transparent real-time chat translator overlay powered by Google Translate.**
@@ -43,6 +43,8 @@ The integrated Tactical Map turns SCUM Island navigation and squad coordination 
 
 ### 📍 Key Map Capabilities
 * **In-Game Overlay (`Ctrl + M`):** Instantly toggle the tactical map and saved waypoints docked directly on your screen while playing SCUM. Auto-hides when Alt-Tabbing away from the game.
+* **Standalone Desktop Map:** Open, inspect, and organize coordinates directly from the Windows System Tray menu anytime, even when SCUM is closed or minimized.
+* **In-App Safe Color Dialog:** Custom color picker operates with `WindowStaysOnTopHint`, completely eliminating accidental fullscreen game minimization (Alt-Tab drop).
 * **Dual Map Styles:** Switch between high-resolution **Satellite (Regular)** and **Tactical** topographic views.
 * **Official SCUM Coordinate Grid:**
   * Sectors: **D0 to Z4** calibrated to game world coordinates.
@@ -77,6 +79,7 @@ Overcome language barriers on international SCUM servers without leaving the gam
 
 ### ⚡ Key Translation Capabilities
 * **Live In-Game HUD Overlay:** Displays translated chat messages directly over your game screen with customizable background opacity and outline contrast.
+* **Squad / Team Highlighting (SCUM Green `#4ade80`):** Messages in squad channels (`[Squad]`, `(Team)`) are automatically identified and colored in vibrant SCUM Green so you never miss teammate callouts.
 * **True-to-Game 10s Fade Behavior:** Incoming messages appear, stay visible for a configured timeout (default: 10 seconds), and fade away naturally just like native SCUM chat.
 * **Game Chat Synchronization (`T` and `Escape`):**
   * Pressing **`T`** opens SCUM chat, reveals previous chat history on the overlay, and summons the Quick Chat input box.
@@ -86,8 +89,34 @@ Overcome language barriers on international SCUM servers without leaving the gam
   * Automatically copies translated text to your clipboard upon pressing **`Enter`**.
   * Paste (`Ctrl + V`) and send directly in SCUM.
 * **Two-Way Language Support:** Supports over 100 languages via Google Translate (Ukrainian, English, German, Polish, Spanish, French, Chinese, Turkish, etc.).
-* **Player Blacklist & Ignore Self:** Filter out spam bots, ignored players, or skip translating your own outgoing messages.
+* **Instant Blacklist Bypass:** Messages from players on your blacklist bypass external translation API and appear immediately in original text without translation delays.
+* **"Map Only" Mode:** Option to completely disable the chat overlay and cease all log file polling, saving CPU cycles and SSD operations.
 * **NVIDIA-Style Status Indicator:** Subtle `[● ON]` (green) / `[● OFF]` (red) badge indicating active status.
+
+---
+
+## 🌐 Core Feature 3: Multi-Language Architecture (i18n)
+
+* **3 Interface Languages:** Switch the entire interface on the fly without restarting:
+  * 🇺🇦 **Українська** (Ukrainian)
+  * 🇬🇧 **English** (English)
+  * 🇷🇺 **Русский** (Russian)
+* **Modular Localization:** Managed via clean external dictionaries in `assets/locales/` with automated fallback.
+
+---
+
+## 🔄 Core Feature 4: 1-Click Auto-Update & 100% Data Preservation
+
+* **Tray Update Notification Badge:** A bright amber update badge `▲` appears on the tray icon when a new version is released on GitHub.
+* **One-Click Update:** Check and apply updates directly from the system tray menu or settings dialog.
+* **Strict User Data Protection:** Your `config.json` (custom hotkeys, positions, languages) and `points.json` (saved coordinates) are **strictly preserved and never overwritten**.
+
+---
+
+## 🛡️ Core Feature 5: Windows Autostart & SmartScreen Compliance
+
+* **Seamless Autostart:** Optional startup with Windows via `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (no admin rights required).
+* **SmartScreen Mitigation:** Binary contains embedded PE metadata and includes `install_cert.bat` to eliminate Windows Defender SmartScreen warnings.
 
 ---
 
@@ -193,6 +222,10 @@ The compiled binary will be placed in `dist/SCUM_Chat_Translator.exe`.
 | `map_show_grid` | bool | `true` | Show D0..Z4 sector grid lines. |
 | `map_show_keypads` | bool | `true` | Show k1..k9 keypad sub-grid lines. |
 | `auto_focus_new_point` | bool | `true` | Automatically pan and focus map on newly detected coordinates. |
+| `enable_chat_translator`| bool | `true` | Toggle chat translator overlay (uncheck for pure "Map Only" mode). |
+| `ui_language` | string | `"uk"` | Interface language (`"uk"`, `"en"`, `"ru"`). |
+| `auto_start` | bool | `true` | Automatically start application with Windows boot. |
+| `auto_check_updates` | bool | `true` | Check for updates automatically in background on launch. |
 
 ---
 
@@ -223,7 +256,9 @@ The compiled binary will be placed in `dist/SCUM_Chat_Translator.exe`.
 Інтерактивна тактична карта виводить орієнтування на острові SCUM та координацію команди на новий рівень:
 
 ### 📍 Можливості карти
-* **Швидкий виклик у грі (`Ctrl + M`):** Миттєво відкриває інтерактивну карту острова та панель збережених точок координат. Працює тільки у грі та автоматично ховається при згортанні (Alt+Tab).
+* **Швидкий виклик у грі (`Ctrl + M`):** Миттєво відкриває інтерактивну карту острова та панель збережених точок координат. Працює у грі та автоматично ховається при згортанні (Alt+Tab).
+* **Автономний запуск з трею:** Відкривайте та редагуйте тактичну карту та координати в будь-який момент без запущеної гри SCUM прямо з меню біля годинника!
+* **Безпечна вбудована палітра кольорів:** Вікно вибору кольору шпильки працює в режимі поверх екрана (`WindowStaysOnTopHint`), запобігаючи випадковому згортанню гри у повноекранному режимі.
 * **Два стилі відображення карти:** Швидке перемикання між **Супутниковою (Regular)** та **Тактичною** топографічною картою високої роздільної здатності.
 * **Офіційна координатна сітка SCUM:**
   * Сектори: **від D0 до Z4**, математично точно прив'язані до світових координат Unreal Engine.
@@ -258,6 +293,7 @@ The compiled binary will be placed in `dist/SCUM_Chat_Translator.exe`.
 
 ### ⚡ Можливості перекладача
 * **Прозорий ігровий HUD-оверлей:** Відображає перекладені повідомлення поверх гри з налаштовуваною прозорістю фону та контрастною обводкою літер.
+* **Зелена підсвітка скваду (SCUM Green `#4ade80`):** Повідомлення від сокомандників (`[Squad]`, `(Team)`) автоматично підсвічуються яскравим фірмовим зеленим кольором гри.
 * **Точна поведінка оригінального чату SCUM:** Кожне повідомлення живе налаштований час (за замовчуванням 10 секунд) і плавно зникає.
 * **Синхронізація з клавішами `T` та `Escape`:**
   * Натискання **`T`** у грі відкриває чат SCUM, розкриває історію повідомлень та активує вікно швидкого введення.
@@ -266,8 +302,34 @@ The compiled binary will be placed in `dist/SCUM_Chat_Translator.exe`.
   * Повністю асинхронний живий переклад у фоновому потоці — жодних підвисань при швидкому наборі тексту.
   * Натискання **`Enter`** автоматично копіює переклад у буфер обміну ➔ вставляйте `Ctrl+V` у гру!
 * **Понад 100 мов:** Підтримка Google Translate для будь-яких мовних пар.
-* **Чорний список гравців:** Можливість ігнорувати спам-ботів або конкретні нікнейми.
+* **Миттєвий чорний список (Blacklist):** Повідомлення від заблокованих гравців не відправляються на переклад і показуються мовою оригіналу без затримок.
+* **Режим «Тільки Карта»:** Можливість повністю вимкнути HUD-перекладач та зупинити читання логу SCUM.log (0% навантаження на диск і CPU).
 * **Індикатор статусу NVIDIA-style:** Зелений `[● ON]` / червоний `[● OFF]` значок у кутку екрана.
+
+---
+
+## 🌐 Ключова можливість 3: Мультиязичність інтерфейсу (i18n)
+
+* **3 повноцінні мови інтерфейсу:** Перемикання в налаштуваннях на льоту:
+  * 🇺🇦 **Українська** (Ukrainian)
+  * 🇬🇧 **English** (English)
+  * 🇷🇺 **Русский** (Russian)
+* Модульні JSON-словники у папці `assets/locales/` із системою автоматичного фолбеку.
+
+---
+
+## 🔄 Ключова можливість 4: Автооновлення в 1 клік та збереження даних
+
+* **Значок-бейдж у треї:** Помаранчевий маркер `▲` біля годинника при появі свіжої версії на GitHub.
+* **Оновлення в один клік:** Завантаження релізу, автоматична заміна бінарників та перезапуск прямо з меню трею.
+* **100% збереження персональних даних:** Файли `config.json` та `points.json` гарантовано захищені від перезапису.
+
+---
+
+## 🛡️ Ключова можливість 5: Автозапуск та захист від SmartScreen
+
+* **Автозапуск Windows:** Безпечний запуск разом із системою через гілку `HKCU` без прав адміністратора.
+* **Усунення синього вікна SmartScreen:** Інтегровано скрипт `install_cert.bat` для додавання локального сертифіката довіри в один клік.
 
 ---
 
@@ -326,6 +388,38 @@ pip install pyinstaller
 pyinstaller SCUM_Chat_Translator.spec
 ```
 Готовий виконуваний файл з'явиться в папці `dist/SCUM_Chat_Translator.exe`.
+
+---
+
+## ⚙️ Таблиця параметрів налаштування (`config.json`)
+
+| Параметр | Тип | За замовчуванням | Опис |
+|---|:---:|:---:|---|
+| `log_file_path` | string | `%LOCALAPPDATA%\SCUM\...` | Шлях до журналу SCUM.log (підтримує змінні оточення Windows). |
+| `target_language` | string | `"uk"` | Мова перекладу вхідного чату SCUM. |
+| `source_language` | string | `"auto"` | Мова оригіналу повідомлень (`auto` для автовизначення). |
+| `outgoing_my_lang` | string | `"uk"` | Ваша рідна мова для швидкого вводу через Quick Chat (`T`). |
+| `outgoing_target_lang` | string | `"en"` | Мова, на яку перекладатиметься ваш текст для відправки в гру. |
+| `message_fade_timeout` | int | `10` | Час показу повідомлення на екрані у секундах (0 = ніколи не ховати). |
+| `font_size` | int | `18` | Розмір шрифту оверлею. |
+| `font_bold` | bool | `true` | Жирний шрифт для підвищення читабельності на тлі гри. |
+| `text_outline` | bool | `true` | Контрастна чорна обводка навколо тексту. |
+| `bg_opacity` | float | `0.0` | Прозорість фонової підкладки оверлею (0.0 = повністю прозорий). |
+| `own_nickname` | string | `""` | Ваш нікнейм у грі (для розпізнавання власних повідомлень). |
+| `ignore_own_messages` | bool | `false` | Ігнорувати переклад власних повідомлень. |
+| `blacklist_nicknames` | list | `[]` | Список нікнеймів для показу без затримок мовою оригіналу. |
+| `hotkey_toggle_map` | string | `"Ctrl+M"` | Гаряча клавіша відкриття тактичної карти та списку точок. |
+| `hotkey_quick_chat` | string | `"T"` | Гаряча клавіша відкриття чату та вікна швидкого перекладу. |
+| `hotkey_toggle_visibility`| string | `"F8"` | Гаряча клавіша приховування / показу оверлею. |
+| `hotkey_toggle_lock` | string | `"F9"` | Режим розблокування оверлею для зміни положення мишкою. |
+| `map_variant` | string | `"regular"` | Стиль карти (`regular` — супутникова, `tactical` — тактична). |
+| `map_show_grid` | bool | `true` | Відображення координатної сітки секторів D0..Z4. |
+| `map_show_keypads` | bool | `true` | Відображення підсітки кейпадів k1..k9. |
+| `auto_focus_new_point` | bool | `true` | Автоматичне фокусування карти на нових координатах із чату. |
+| `enable_chat_translator`| bool | `true` | Увімкнення перекладача чату (вимкніть для режиму «Тільки Карта»). |
+| `ui_language` | string | `"uk"` | Мова інтерфейсу (`"uk"`, `"en"`, `"ru"`). |
+| `auto_start` | bool | `true` | Безпечний автозапуск програми разом із Windows. |
+| `auto_check_updates` | bool | `true` | Автоматична фонова перевірка оновлень при запуску. |
 
 ---
 
