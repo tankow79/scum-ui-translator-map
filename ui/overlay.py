@@ -13,6 +13,7 @@ from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QKeyEvent, QImage
 
 from core.config_manager import ConfigManager
 from core.languages import ALL_LANGUAGES
+from core.i18n import tr
 from utils.win_api import (
     set_click_through, keep_on_top, force_foreground_window,
     restore_game_focus, set_last_game_hwnd, user32
@@ -169,15 +170,16 @@ class ChatOverlay(QWidget):
         h.setContentsMargins(8, 4, 8, 4)
         h.setSpacing(6)
 
-        self.title_label = QLabel("💬 SCUM Chat [F9 — Зафіксувати]")
+        hotkey = self.cfg.get("hotkey_toggle_lock", "F9")
+        self.title_label = QLabel(tr("overlay.header_title", hotkey=hotkey, lock_text=tr("overlay.lock")))
         self.title_label.setStyleSheet("color: #38bdf8; font-weight: bold; font-size: 11px; border: none; background: transparent;")
         h.addWidget(self.title_label)
         h.addStretch()
 
         # Кнопка тесту
-        self.btn_test = QPushButton("🧪 Тест")
+        self.btn_test = QPushButton(f"🧪 {tr('overlay.test_btn')}")
         self.btn_test.setFixedHeight(24)
-        self.btn_test.setToolTip("Надіслати тестове повідомлення чату")
+        self.btn_test.setToolTip(tr("tray.test_msg"))
         self.btn_test.setStyleSheet("""
             QPushButton {
                 background-color: #0284c7;
@@ -196,7 +198,7 @@ class ChatOverlay(QWidget):
         # Очистити історію
         self.btn_clear = QPushButton("🧹")
         self.btn_clear.setFixedSize(24, 24)
-        self.btn_clear.setToolTip("Очистити історію повідомлень")
+        self.btn_clear.setToolTip(tr("overlay.clear_history"))
         self.btn_clear.setStyleSheet("""
             QPushButton {
                 background-color: #1e293b;
@@ -213,7 +215,8 @@ class ChatOverlay(QWidget):
         # Карта та точки (Ctrl+M)
         self.btn_map = QPushButton("🗺")
         self.btn_map.setFixedSize(24, 24)
-        self.btn_map.setToolTip("Відкрити карту SCUM та список точок (Ctrl+M)")
+        map_hotkey = self.cfg.get("hotkey_toggle_map", "Ctrl+M")
+        self.btn_map.setToolTip(tr("overlay.open_map", hotkey=map_hotkey))
         self.btn_map.setStyleSheet("""
             QPushButton {
                 background-color: #1e293b;
@@ -230,7 +233,7 @@ class ChatOverlay(QWidget):
         # Налаштування
         self.btn_settings = QPushButton("🛠")
         self.btn_settings.setFixedSize(24, 24)
-        self.btn_settings.setToolTip("Відкрити налаштування")
+        self.btn_settings.setToolTip(tr("overlay.open_settings"))
         self.btn_settings.setStyleSheet("""
             QPushButton {
                 background-color: #1e293b;
@@ -245,7 +248,7 @@ class ChatOverlay(QWidget):
         h.addWidget(self.btn_settings)
 
         # Зафіксувати
-        self.btn_lock = QPushButton("🔒 Зафіксувати")
+        self.btn_lock = QPushButton(tr("overlay.lock"))
         self.btn_lock.setFixedHeight(24)
         self.btn_lock.setStyleSheet("""
             QPushButton {
@@ -375,7 +378,7 @@ class ChatOverlay(QWidget):
 
         top_row.addStretch()
 
-        self.lbl_input_hint = QLabel("💡 <b>Enter</b> — скопіювати | <b>Esc</b> — закрити")
+        self.lbl_input_hint = QLabel(tr("overlay.hint_input"))
         self.lbl_input_hint.setStyleSheet("color: #94a3b8; font-size: 11px; background: transparent; border: none;")
         top_row.addWidget(self.lbl_input_hint)
 
@@ -383,13 +386,13 @@ class ChatOverlay(QWidget):
 
         # 2. Поле введення
         self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Введіть текст повідомлення... (Enter — скопіювати переклад)")
+        self.input_field.setPlaceholderText(tr("overlay.placeholder_type"))
         self.input_field.textChanged.connect(self._on_input_text_changed)
         self.input_field.installEventFilter(self)
         v.addWidget(self.input_field)
 
         # 3. Результат живого перекладу
-        self.lbl_translation = QLabel("<i>Тут з'явиться переклад...</i>")
+        self.lbl_translation = QLabel(f"<i>{tr('overlay.placeholder_input')}</i>")
         self.lbl_translation.setStyleSheet("""
             QLabel {
                 background-color: rgba(2, 6, 23, 0.75);
@@ -408,7 +411,7 @@ class ChatOverlay(QWidget):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
 
-        self.btn_copy = QPushButton("📋 Скопіювати переклад (Enter)")
+        self.btn_copy = QPushButton(tr("overlay.copy_btn_enter"))
         self.btn_copy.setStyleSheet("""
             QPushButton {
                 background-color: #059669;
@@ -482,7 +485,7 @@ class ChatOverlay(QWidget):
             self._current_translation = ""
             self._live_req_id += 1
             self._debounce_timer.stop()
-            self.lbl_translation.setText("<i>Тут з'явиться переклад...</i>")
+            self.lbl_translation.setText(f"<i>{tr('overlay.placeholder_input')}</i>")
             return
         # Таймер 450мс гарантує, що введення тексту не викликає підвисань інтерфейсу
         self._debounce_timer.start(450)
@@ -496,7 +499,7 @@ class ChatOverlay(QWidget):
             req_id = self._live_req_id
             my_lang = self.combo_src.currentData() or "uk"
             target_lang = self.combo_tgt.currentData() or "en"
-            self.lbl_translation.setText("<i>Перекладаємо...</i>")
+            self.lbl_translation.setText(f"<i>{tr('overlay.translating')}</i>")
 
             def _async_worker(rid: int, txt: str, src: str, tgt: str):
                 try:
@@ -514,7 +517,7 @@ class ChatOverlay(QWidget):
             self._current_translation = translation
             self.lbl_translation.setText(translation)
         else:
-            self.lbl_translation.setText("<i>Не вдалося отримати переклад</i>")
+            self.lbl_translation.setText(f"<i>{tr('overlay.translate_fail')}</i>")
 
     def _copy_translation(self):
         orig = self.input_field.text().strip()
@@ -551,8 +554,8 @@ class ChatOverlay(QWidget):
         self._sync_combos_from_config()
         self.input_field.clear()
         self._current_translation = ""
-        self.lbl_translation.setText("<i>Тут з'явиться переклад...</i>")
-        self.lbl_input_hint.setText("💡 <b>Enter</b> — скопіювати | <b>Esc</b> — закрити")
+        self.lbl_translation.setText(f"<i>{tr('overlay.placeholder_input')}</i>")
+        self.lbl_input_hint.setText(tr("overlay.hint_input"))
 
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
         self.show()
@@ -571,7 +574,7 @@ class ChatOverlay(QWidget):
         self._debounce_timer.stop()
         self.input_field.clear()
         self._current_translation = ""
-        self.lbl_translation.setText("<i>Тут з'явиться переклад...</i>")
+        self.lbl_translation.setText(f"<i>{tr('overlay.placeholder_input')}</i>")
 
         self.input_field.clearFocus()
         self.clearFocus()
@@ -749,6 +752,12 @@ class ChatOverlay(QWidget):
         self.update_style()
         hwnd = int(self.winId())
 
+        hotkey = self.cfg.get("hotkey_toggle_lock", "F9")
+        if hasattr(self, 'title_label'):
+            self.title_label.setText(tr("overlay.header_title", hotkey=hotkey, lock_text=tr("overlay.lock") if not self.is_locked else tr("overlay.unlock")))
+        if hasattr(self, 'btn_lock'):
+            self.btn_lock.setText(tr("overlay.lock") if not self.is_locked else tr("overlay.unlock"))
+
         if self.is_locked:
             # Клікабельне тільки якщо зараз відкритий режим введення чату
             clickthrough = not self.in_chat_mode
@@ -814,7 +823,16 @@ class ChatOverlay(QWidget):
         html_parts = []
         for e in visible_entries:
             # Автентична колірна гама чату SCUM 1:1 з грою:
-            if e.sender.lower() == own_nick or e.msg_type in ("squad", "team"):
+            is_squad = (
+                (own_nick and e.sender.lower() == own_nick) or
+                e.msg_type in ("squad", "team") or
+                any(tag in e.sender.lower() for tag in (
+                    "(squad)", "[squad]", "(team)", "[team]",
+                    "(сквад)", "[сквад]", "(отряд)", "[отряд]",
+                    "(загін)", "[загін]", "(команда)", "[команда]"
+                ))
+            )
+            if is_squad:
                 # Власний нікнейм / повідомлення загону (скваду) — соковитий зелений SCUM Green (#4ade80)
                 sender_color = "#4ade80"
                 msg_color = "#4ade80"
@@ -852,7 +870,7 @@ class ChatOverlay(QWidget):
                 if show_orig:
                     part += (
                         f'<br><span style="color:#cbd5e1; font-size:{font_size - 2}px; padding-left:10px;">'
-                        f'↳ <i>оригінал: {safe_orig}</i></span>'
+                        f'↳ <i>{tr("overlay.original_prefix")} {safe_orig}</i></span>'
                     )
 
             part += '</div>'

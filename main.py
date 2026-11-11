@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
@@ -9,6 +10,7 @@ from typing import Optional
 
 from core.version import __version__, GITHUB_REPO_URL
 from core.updater import UpdateChecker, UpdateInfo
+from core.i18n import LocalizationManager, tr
 from ui.update_dialog import UpdateDialog
 from core.config_manager import ConfigManager
 from core.translator import GoogleTranslatorEngine
@@ -19,6 +21,7 @@ from ui.settings_window import SettingsDialog
 from ui.status_badge import StatusBadge
 from ui.map_window import MapWindow
 from ui.points_window import PointsWindow
+from ui.color_picker import is_color_dialog_active
 from core.coordinate_parser import parse_chat_coordinate
 from core.points_manager import PointsManager
 from utils.win_api import (
@@ -52,15 +55,44 @@ class AppController(QObject):
         if point:
             self.coordinate_detected.emit(point)
 
+        # 2. Якщо увімкнено режим "Тільки Карта" — координати зібрані, а переклад чату вимкнено
+        if not self.cfg.get("enable_chat_translator", True):
+            return
+
         own_nick = self.cfg.get("own_nickname", "").lower()
         ignore_own = self.cfg.get("ignore_own_messages", False)
 
-        if ignore_own and sender.lower() == own_nick:
+        if ignore_own and own_nick and sender.lower() == own_nick:
             return
 
-        # 2. Чорний список гравців: повідомлення не перекладаються, а негайно виводяться мовою оригіналу
-        blacklist = [b.strip().lower() for b in self.cfg.get("blacklist_nicknames", []) if isinstance(b, str) and b.strip()]
-        if any(b in sender.strip().lower() for b in blacklist):
+        # 3. Чорний список гравців: повідомлення не перекладаються, а МИТТЄВО виводяться мовою оригіналу
+        raw_bl = self.cfg.get("blacklist_nicknames", [])
+        blacklist = []
+        if isinstance(raw_bl, str):
+            blacklist = [b.strip().lower() for b in raw_bl.split(",") if b.strip()]
+        elif isinstance(raw_bl, (list, tuple, set)):
+            for item in raw_bl:
+                if isinstance(item, str):
+                    for sub in item.split(","):
+                        if sub.strip():
+                            blacklist.append(sub.strip().lower())
+
+        sender_clean = sender.strip().lower()
+        sender_no_tag = re.sub(r'^[\[\(].*?[\]\)]\s*', '', sender_clean).strip()
+        sender_words = re.findall(r'[\w]+', sender_clean)
+
+        is_blacklisted = False
+        for b in blacklist:
+            if not b:
+                continue
+            if b == sender_clean or b == sender_no_tag or b in sender_words:
+                is_blacklisted = True
+                break
+            if len(b) >= 3 and b in sender_clean:
+                is_blacklisted = True
+                break
+
+        if is_blacklisted:
             self.translated_ready.emit(time_str, sender, msg, msg, "orig", msg_type)
             return
 
@@ -133,6 +165,7 @@ def main():
         app.setWindowIcon(QIcon(create_tray_icon_pixmap()))
 
     cfg = ConfigManager()
+    LocalizationManager.get_instance().set_locale(cfg.get("ui_language", "uk"))
 
     translator = GoogleTranslatorEngine(
         target_lang=cfg.get("target_language", "uk"),
@@ -200,6 +233,21 @@ def main():
             points_win.show()
             points_win.raise_()
 
+    def on_map_window_closed():
+        nonlocal is_standalone_map_mode
+        points_win.hide()
+        is_standalone_map_mode = False
+        restore_game_focus()
+
+    def on_points_window_closed():
+        nonlocal is_standalone_map_mode
+        map_win.hide()
+        is_standalone_map_mode = False
+        restore_game_focus()
+
+    map_win.closed.connect(on_map_window_closed)
+    points_win.closed.connect(on_points_window_closed)
+
     controller.hotkey_toggle_map.connect(toggle_map_and_points)
     overlay.open_map_requested.connect(toggle_map_and_points)
 
@@ -210,6 +258,8 @@ def main():
     overlay.open_settings_requested.connect(settings_dialog.show)
 
     def on_toggle_lock():
+        if not cfg.get("enable_chat_translator", True):
+            return
         overlay.toggle_lock()
         status_badge.set_locked(overlay.is_locked)
         if not overlay.is_locked:
@@ -221,7 +271,9 @@ def main():
     last_chat_open_time = 0.0
 
     def on_chat_opened():
-        # Клавіша чату (T) реагує ТІЛЬКИ всередині вікна гри SCUM
+        # Клавіша чату (T) реагує ТІЛЬКИ всередині вікна гри SCUM та при увімкненому перекладачі
+        if not cfg.get("enable_chat_translator", True):
+            return
         if not is_game_foreground("scum", allow_own_process=True):
             return
 
@@ -274,6 +326,8 @@ def main():
     controller.hotkey_enter_pressed.connect(on_enter_pressed)
 
     def toggle_overlay_visibility():
+        if not cfg.get("enable_chat_translator", True):
+            return
         nonlocal is_overlay_enabled_by_user
         is_overlay_enabled_by_user = not is_overlay_enabled_by_user
         cfg.set("overlay_enabled", is_overlay_enabled_by_user)
@@ -317,6 +371,10 @@ def main():
             # У режимі налаштування положення вікна завжди видно
             return
 
+        # Якщо відкрито будь-який модальний діалог (палітра кольорів, налаштування, гравці тощо) - не ховаємо вікна
+        if QApplication.activeModalWidget() is not None or is_color_dialog_active:
+            return
+
         active = is_game_foreground("scum", allow_own_process=True)
         if not active:
             if overlay.in_chat_mode:
@@ -332,23 +390,32 @@ def main():
                 if points_win.isVisible():
                     points_win.hide()
         else:
-            # Значок статусу (ON/OFF) завжди відображається у грі
-            if not status_badge.isVisible():
-                status_badge.show()
-
-            # Оверлей чату показується тільки якщо увімкнений гравцем (F8)
-            if is_overlay_enabled_by_user:
-                if not overlay.isVisible():
-                    overlay.show()
-            else:
+            enable_chat = cfg.get("enable_chat_translator", True)
+            if not enable_chat:
+                # Режим "Тільки Карта": оверлей чату та значок статусу вимкнені
                 if overlay.isVisible():
                     overlay.hide()
+                if status_badge.isVisible():
+                    status_badge.hide()
+            else:
+                # Значок статусу (ON/OFF) завжди відображається у грі
+                if not status_badge.isVisible():
+                    status_badge.show()
+
+                # Оверлей чату показується тільки якщо увімкнений гравцем (F8)
+                if is_overlay_enabled_by_user:
+                    if not overlay.isVisible():
+                        overlay.show()
+                else:
+                    if overlay.isVisible():
+                        overlay.hide()
 
     game_check_timer = QTimer()
     game_check_timer.timeout.connect(check_game_window_state)
     game_check_timer.start(500)
 
     def on_settings_changed():
+        LocalizationManager.get_instance().set_locale(cfg.get("ui_language", "uk"))
         translator.update_settings(
             target_lang=cfg.get("target_language", "uk"),
             source_lang=cfg.get("source_language", "auto")
@@ -358,21 +425,22 @@ def main():
         map_win.canvas.toggle_grid(cfg.get("map_show_grid", True))
         map_win.canvas.toggle_keypads(cfg.get("map_show_keypads", True))
         update_registered_hotkeys()
+        update_tray_texts()
         
-        nonlocal log_parser
+        if log_parser is not None:
+            log_parser.set_log_path(cfg.get_resolved_log_path())
+
         enable_chat = cfg.get("enable_chat_translator", True)
-        if enable_chat:
-            if log_parser is None:
-                log_parser = ScumLogParser(cfg.get_resolved_log_path(), on_new_log_message)
-                log_parser.start()
-            else:
-                log_parser.set_log_path(cfg.get_resolved_log_path())
-        else:
-            if log_parser is not None:
-                log_parser.stop()
-                log_parser = None
+        if not enable_chat:
             if overlay.isVisible():
                 overlay.hide()
+            if status_badge.isVisible():
+                status_badge.hide()
+        else:
+            if is_game_foreground("scum", allow_own_process=True):
+                status_badge.show()
+                if is_overlay_enabled_by_user:
+                    overlay.show()
 
     settings_dialog.settings_changed.connect(on_settings_changed)
 
@@ -397,19 +465,15 @@ def main():
 
     overlay.test_requested.connect(send_test_message)
 
-    # Парсер логів гри SCUM
+    # Парсер логів гри SCUM (активний завжди для автоматичного збору GPS-координат на тактичну карту)
     resolved_log_path = cfg.get_resolved_log_path()
-    log_parser = None
 
     def on_new_log_message(time_str: str, sender: str, msg: str, msg_type: str):
         controller.raw_message_received.emit(time_str, sender, msg, msg_type)
 
-    if cfg.get("enable_chat_translator", True):
-        print(f"[Main] Моніторинг логу SCUM: {resolved_log_path}")
-        log_parser = ScumLogParser(resolved_log_path, on_new_log_message)
-        log_parser.start()
-    else:
-        print("[Main] Режим 'Тільки Карта': читання логу та перекладач вимкнено.")
+    print(f"[Main] Моніторинг логу SCUM: {resolved_log_path}")
+    log_parser = ScumLogParser(resolved_log_path, on_new_log_message)
+    log_parser.start()
 
     # Системний трей
     tray = QSystemTrayIcon(QIcon(create_tray_icon_pixmap(has_update=False)), app)
@@ -428,7 +492,7 @@ def main():
             check_for_updates_interactive()
 
     # Кнопка встановлення оновлення (з'являється у верхній частині меню трею при наявності нової версії)
-    action_install_update = QAction("⚡ Оновити програму (1 клік)", app)
+    action_install_update = QAction(tr("tray.update_btn"), app)
     font_bold = action_install_update.font()
     font_bold.setBold(True)
     action_install_update.setFont(font_bold)
@@ -441,13 +505,13 @@ def main():
         cached_update_info = info
         # 1. Світимо індикатор оновлення на іконці трею
         tray.setIcon(QIcon(create_tray_icon_pixmap(has_update=True)))
-        tray.setToolTip(f"SCUM Chat Translator v{__version__} [🔥 Доступне оновлення v{info.version}!]")
-        action_install_update.setText(f"⚡ Оновити до v{info.version} (1 клік)")
+        tray.setToolTip(tr("tray.tooltip_update", version=__version__, new_version=info.version))
+        action_install_update.setText(tr("tray.update_btn_version", version=info.version))
         action_install_update.setVisible(True)
         # 2. Сповіщення у Windows треї
         tray.showMessage(
-            "Доступне оновлення SCUM Translator",
-            f"Вийшла нова версія v{info.version}!\nКлікніть тут або в меню трею для оновлення в 1 клік.",
+            tr("tray.update_avail_title"),
+            tr("tray.update_avail_body", version=info.version),
             QSystemTrayIcon.MessageIcon.Information,
             8000
         )
@@ -459,23 +523,33 @@ def main():
     tray.messageClicked.connect(on_tray_message_clicked)
     update_checker.update_available.connect(on_update_detected)
 
-    action_chat = QAction("💬 Відкрити переклад (T)", app)
+    action_chat = QAction(app)
     action_chat.triggered.connect(on_chat_opened)
     tray_menu.addAction(action_chat)
 
-    action_map = QAction(f"🗺 Карта та Точки ({cfg.get('hotkey_toggle_map', 'Ctrl+M')})", app)
+    action_map = QAction(app)
     action_map.triggered.connect(lambda: toggle_map_and_points(force_standalone=True))
     tray_menu.addAction(action_map)
 
-    action_lock = QAction("🔒/🔓 Режим налаштування (F9)", app)
+    def toggle_chat_enabled_mode():
+        curr = cfg.get("enable_chat_translator", True)
+        new_val = not curr
+        cfg.set("enable_chat_translator", new_val)
+        on_settings_changed()
+
+    action_mode_toggle = QAction(app)
+    action_mode_toggle.triggered.connect(toggle_chat_enabled_mode)
+    tray_menu.addAction(action_mode_toggle)
+
+    action_lock = QAction(app)
     action_lock.triggered.connect(on_toggle_lock)
     tray_menu.addAction(action_lock)
 
-    action_vis = QAction("👁 Показати/Приховати оверлей (F8)", app)
+    action_vis = QAction(app)
     action_vis.triggered.connect(toggle_overlay_visibility)
     tray_menu.addAction(action_vis)
 
-    action_test = QAction("🧪 Надіслати тестове повідомлення", app)
+    action_test = QAction(app)
     action_test.triggered.connect(send_test_message)
     tray_menu.addAction(action_test)
 
@@ -510,20 +584,53 @@ def main():
         interactive_checker.check_error.connect(on_err)
         interactive_checker.check_for_updates_async()
 
-    action_check_update = QAction("🔄 Перевірити оновлення", app)
+    action_check_update = QAction(app)
     action_check_update.triggered.connect(check_for_updates_interactive)
     tray_menu.addAction(action_check_update)
 
-    action_settings = QAction("⚙ Налаштування", app)
+    action_settings = QAction(app)
     action_settings.triggered.connect(settings_dialog.show)
     tray_menu.addAction(action_settings)
 
-    action_quit = QAction("❌ Вихід", app)
+    action_quit = QAction(app)
     action_quit.triggered.connect(app.quit)
     tray_menu.addAction(action_quit)
 
+    def update_tray_texts():
+        k_chat = cfg.get("hotkey_quick_chat", "T")
+        k_map = cfg.get("hotkey_toggle_map", "Ctrl+M")
+        k_lock = cfg.get("hotkey_toggle_lock", "F9")
+        k_vis = cfg.get("hotkey_toggle_visibility", "F8")
+        is_chat_on = cfg.get("enable_chat_translator", True)
+
+        action_chat.setText(tr("tray.open_chat", hotkey=k_chat if k_chat else "—"))
+        action_map.setText(tr("tray.map_and_points", hotkey=k_map if k_map else "—"))
+        action_lock.setText(tr("tray.toggle_lock", hotkey=k_lock if k_lock else "—"))
+        action_vis.setText(tr("tray.toggle_vis", hotkey=k_vis if k_vis else "—"))
+        action_test.setText(tr("tray.test_msg"))
+        action_check_update.setText(tr("tray.check_updates"))
+        action_settings.setText(tr("tray.settings"))
+        action_quit.setText(tr("tray.exit"))
+
+        if is_chat_on:
+            action_mode_toggle.setText(f"✔ {tr('tray.mode_full')}")
+        else:
+            action_mode_toggle.setText(f"🗺 {tr('tray.mode_map_only')}")
+
+        tray.setToolTip(tr("tray.tooltip", version=__version__))
+
+    update_tray_texts()
+
+    def on_tray_activated(reason):
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            toggle_map_and_points(force_standalone=True)
+        elif reason == QSystemTrayIcon.ActivationReason.Trigger:
+            # Одинарний клік поза грою швидко відкриває карту в автономному режимі
+            if not is_scum_running("scum") and not map_win.isVisible():
+                toggle_map_and_points(force_standalone=True)
+
+    tray.activated.connect(on_tray_activated)
     tray.setContextMenu(tray_menu)
-    tray.setToolTip(f"SCUM Chat Translator v{__version__}")
     tray.show()
 
     # Фонова автоперевірка оновлень при старті програми (через 4 сек без блокування GUI)
@@ -532,9 +639,10 @@ def main():
 
     # Початковий стан: якщо гра відкрита, показуємо відповідні віджети
     if is_game_foreground("scum", allow_own_process=True):
-        status_badge.show()
-        if is_overlay_enabled_by_user:
-            overlay.show()
+        if cfg.get("enable_chat_translator", True):
+            status_badge.show()
+            if is_overlay_enabled_by_user:
+                overlay.show()
     else:
         print("[Main] Гра SCUM наразі не активна. Оверлей та індикатор з'являться, щойно гра відкриється.")
 
@@ -542,7 +650,8 @@ def main():
     print(f"[Main] Гарячі клавіші: Зафіксувати [{cfg.get('hotkey_toggle_lock', 'F9')}], Чат [{cfg.get('hotkey_quick_chat', 'T')}], Приховати [{cfg.get('hotkey_toggle_visibility', 'F8')}], Карта [{cfg.get('hotkey_toggle_map', 'Ctrl+M')}]")
 
     ret = app.exec()
-    log_parser.stop()
+    if log_parser is not None:
+        log_parser.stop()
     hotkey_manager.stop()
     sys.exit(ret)
 

@@ -20,6 +20,7 @@ from core.coordinate_parser import (
     POINT_CATEGORIES, get_category_info, detect_category_from_name
 )
 from core.points_manager import PointsManager
+from ui.color_picker import open_safe_color_dialog
 
 
 class MapCanvasWidget(QWidget):
@@ -277,9 +278,13 @@ class MapCanvasWidget(QWidget):
 
         act_custom = color_menu.addAction("🎨 Обрати власний колір...")
         def pick_custom():
-            col = QColorDialog.getColor(QColor(getattr(point, "color", None) or "#38bdf8"), self, "Оберіть колір шпильки")
-            if col.isValid():
-                self.points_mgr.update_point_color(point.id, col.name())
+            col = open_safe_color_dialog(
+                self,
+                getattr(point, "color", None) or "#38bdf8",
+                f"Колір шпильки: {point.name}"
+            )
+            if col:
+                self.points_mgr.update_point_color(point.id, col)
         act_custom.triggered.connect(pick_custom)
 
         menu.addSeparator()
@@ -299,6 +304,7 @@ class MapCanvasWidget(QWidget):
 
     def _edit_base_players(self, point: MapPoint):
         dialog = QInputDialog(self)
+        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dialog.setWindowTitle("Гравці бази")
         dialog.setLabelText(f"Введіть нікнейми гравців бази через кому:\n{point.name} [{point.sector} {point.keypad}]")
         dialog.setTextValue(getattr(point, "players", ""))
@@ -316,6 +322,7 @@ class MapCanvasWidget(QWidget):
 
     def _rename_point(self, point: MapPoint):
         dialog = QInputDialog(self)
+        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dialog.setWindowTitle("Перейменування точки")
         dialog.setLabelText("Введіть нову назву точки:")
         dialog.setTextValue("" if point.name == "None" else point.name)

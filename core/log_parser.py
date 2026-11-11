@@ -126,16 +126,20 @@ class ScumLogParser:
                 msg = msg[1:-1].strip()
 
             # Визначення повідомлення загону / скваду (Squad chat)
-            # В SCUM логах чат скваду маркується префіксами у відправнику або повідомленні:
+            # В SCUM логах чат скваду маркується префіксами/тегами у відправнику або повідомленні:
             # Наприклад: "Message: (Squad) Nickname: hello", "(Team) Nick", "Nickname (Squad): hello", "[Squad] msg"
             lower_sender = sender.lower()
             lower_msg = msg.lower()
+            squad_tags = (
+                "(squad)", "[squad]", "(team)", "[team]",
+                "(сквад)", "[сквад]", "(отряд)", "[отряд]",
+                "(загін)", "[загін]", "(команда)", "[команда]"
+            )
             if (
-                "(squad)" in lower_sender or "[squad]" in lower_sender or
-                "(team)" in lower_sender or "[team]" in lower_sender or
+                any(tag in lower_sender for tag in squad_tags) or
                 lower_sender.startswith("squad ") or lower_sender.startswith("team ") or
-                lower_msg.startswith("(squad)") or lower_msg.startswith("[squad]") or
-                lower_msg.startswith("(team)") or lower_msg.startswith("[team]")
+                lower_sender.startswith("сквад ") or lower_sender.startswith("отряд ") or
+                any(lower_msg.startswith(tag) for tag in squad_tags)
             ):
                 msg_type = "squad"
 

@@ -200,6 +200,87 @@ def test_safe_extract_zip_preserves_user_config_and_points():
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+def test_v2_real_zip_upgrade_and_config_migration():
+    """
+    Тестує реальний релізний архів SCUM_Chat_Translator_v2.0.0.zip:
+    - Безпечне оновлення без перезапису налаштувань гравця;
+    - Безшовне підтягування нових параметрів v2.0.0 (enable_chat_translator, ui_language, auto_start).
+    """
+    from core.config_manager import ConfigManager
+    from core.points_manager import PointsManager
+
+    real_zip = os.path.join(get_application_root_dir(), "release", "SCUM_Chat_Translator_v2.0.0.zip")
+    if not os.path.exists(real_zip):
+        pytest.skip("Релізний архів v2.0.0 ще не зібраний")
+
+    temp_dir = tempfile.mkdtemp(prefix="scum_v2_upgrade_test_")
+    try:
+        user_config_path = os.path.join(temp_dir, "config.json")
+        user_points_path = os.path.join(temp_dir, "points.json")
+
+        # 1. Створюємо конфіг від попередньої версії (v1.0.0/v1.1.0) без нових ключів v2
+        old_user_config = {
+            "own_nickname": "HardcoreSurvivor",
+            "font_size": 20,
+            "target_language": "de",
+            "hotkey_toggle_map": "Ctrl+F10"
+        }
+        with open(user_config_path, "w", encoding="utf-8") as f:
+            json.dump(old_user_config, f)
+
+        # 2. Створюємо збережені точки гравця
+        old_user_points = [
+            {
+                "id": "p_user_1",
+                "name": "BunkerC2_Loot",
+                "date_time": "10.11 20:00:00",
+                "raw_coord": "{X=100.0 Y=200.0 Z=300.0|P=0.0 Y=0.0 R=0.0}",
+                "x": 100.0,
+                "y": 200.0,
+                "z": 300.0,
+                "sector": "C2",
+                "keypad": "k5",
+                "norm_x": 0.5,
+                "norm_y": 0.5,
+                "created_timestamp": 1700000000.0,
+                "color": "#ef4444",
+                "category": "loot",
+                "players": "TeamAlpha"
+            }
+        ]
+        with open(user_points_path, "w", encoding="utf-8") as f:
+            json.dump(old_user_points, f)
+
+        # 3. Розпаковуємо реальний архів v2.0.0
+        UpdateInstaller.safe_extract_zip(real_zip, temp_dir)
+
+        # 4. Перевіряємо збереження конфігу та міграцію налаштувань
+        cfg = ConfigManager(user_config_path)
+        assert cfg.get("own_nickname") == "HardcoreSurvivor"
+        assert cfg.get("font_size") == 20
+        assert cfg.get("target_language") == "de"
+        assert cfg.get("hotkey_toggle_map") == "Ctrl+F10"
+        # Нові дефолтні ключі v2.0.0
+        assert cfg.get("enable_chat_translator") is True
+        assert cfg.get("ui_language") == "uk"
+        assert cfg.get("auto_start") is True
+
+        # 5. Перевіряємо збереження точок на карті
+        pm = PointsManager(user_points_path)
+        pts = pm.get_points()
+        assert len(pts) == 1
+        assert pts[0].name == "BunkerC2_Loot"
+        assert pts[0].sector == "C2"
+
+        # 6. Перевіряємо появу нових файлів релізу
+        assert os.path.exists(os.path.join(temp_dir, "SCUM_Chat_Translator.exe"))
+        assert os.path.exists(os.path.join(temp_dir, "install_cert.bat"))
+        assert os.path.exists(os.path.join(temp_dir, "INSTRUCTION_UA.txt"))
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def test_backup_user_data():
     temp_dir = tempfile.mkdtemp(prefix="scum_test_backup_")
     try:

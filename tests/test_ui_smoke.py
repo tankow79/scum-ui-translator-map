@@ -160,6 +160,29 @@ def test_settings_dialog_smoke(qapp, tmp_path):
     assert cfg.get("font_bold") is True
 
 
+def test_hotkey_button_clear_and_reset(qapp, tmp_path):
+    from ui.settings_window import HotkeyButton
+    btn = HotkeyButton("F9")
+    assert btn.text() == "F9"
+    assert btn.current_hotkey == "F9"
+
+    # Очищення бінда через метод clear_hotkey (кнопка ❌)
+    btn.clear_hotkey()
+    assert btn.current_hotkey == ""
+    assert btn.text() == "— Не призначено —"
+
+    # Встановлення нового значення
+    btn.set_hotkey("Ctrl+M")
+    assert btn.current_hotkey == "Ctrl+M"
+    assert btn.text() == "Ctrl+M"
+
+
+def test_safe_color_picker_module():
+    from ui.color_picker import is_color_dialog_active, open_safe_color_dialog
+    assert is_color_dialog_active is False
+    assert callable(open_safe_color_dialog)
+
+
 def test_status_badge_smoke(qapp, tmp_path):
     cfg_file = tmp_path / "test_cfg.json"
     cfg = ConfigManager(str(cfg_file))
@@ -324,4 +347,86 @@ def test_text_outline_and_scum_colors(qapp, tmp_path):
     cfg.set("text_outline", False)
     overlay._refresh_rendered_chat()
     assert overlay.chat_view.outline_enabled is False
+
+
+def test_squad_green_color(qapp, tmp_path):
+    cfg_file = tmp_path / "test_cfg.json"
+    cfg = ConfigManager(str(cfg_file))
+    cfg.set("own_nickname", "MyHero")
+    overlay = ChatOverlay(cfg)
+
+    # 1. Сквад через msg_type="squad"
+    overlay.add_message("12:00:00", "Mate", "Cover me", "Прикрий мене", "en", "squad")
+    html1 = overlay.chat_view.toHtml()
+    assert "#4ade80" in html1
+
+    # 2. Сквад через префікс у нікнеймі: [Squad] Mate
+    overlay.clear_chat()
+    overlay.add_message("12:00:01", "[Squad] Mate", "Enemy ahead", "Ворог попереду", "en", "player")
+    html2 = overlay.chat_view.toHtml()
+    assert "#4ade80" in html2
+
+    # 3. Сквад через український префікс: (сквад) Друг
+    overlay.clear_chat()
+    overlay.add_message("12:00:02", "(сквад) Друг", "Знайшов лут", "Знайшов лут", "uk", "player")
+    html3 = overlay.chat_view.toHtml()
+    assert "#4ade80" in html3
+
+    # 4. Власний нікнейм MyHero
+    overlay.clear_chat()
+    overlay.add_message("12:00:03", "myhero", "Я на базі", "Я на базі", "uk", "player")
+    html4 = overlay.chat_view.toHtml()
+    assert "#4ade80" in html4
+
+
+def test_map_only_mode_controller(qapp, tmp_path):
+    from main import AppController
+    cfg_file = tmp_path / "test_cfg.json"
+    cfg = ConfigManager(str(cfg_file))
+    cfg.set("enable_chat_translator", False)
+    tr = GoogleTranslatorEngine(target_lang="uk")
+
+    controller = AppController(cfg, tr)
+    received_translations = []
+    received_coords = []
+
+    controller.translated_ready.connect(lambda *args: received_translations.append(args))
+    controller.coordinate_detected.connect(lambda pt: received_coords.append(pt))
+
+    # Звичайне повідомлення - не повинно перекладатися і видаватися
+    controller._handle_raw_message("14:00:00", "Enemy", "I see you", "player")
+    qapp.processEvents()
+    time.sleep(0.1)
+    assert len(received_translations) == 0
+
+    # Повідомлення з координатами - координати ПОВИННІ бути розпізнані для карти!
+    sample_coord = "{X=150000.0 Y=250000.0 Z=1000.0|P=0 Y=0 R=0}"
+    controller._handle_raw_message("14:00:05", "Teammate", f"Airdrop here {sample_coord}", "player")
+    qapp.processEvents()
+    time.sleep(0.1)
+
+    assert len(received_translations) == 0  # Чат вимкнено
+    assert len(received_coords) == 1        # Карта отримала точку!
+    assert received_coords[0].name == "Airdrop here"
+
+
+def test_settings_language_switch(qapp, tmp_path):
+    from core.i18n import LocalizationManager, tr
+    cfg_file = tmp_path / "test_cfg.json"
+    cfg = ConfigManager(str(cfg_file))
+    cfg.set("ui_language", "en")
+
+    dlg = SettingsDialog(cfg)
+    assert LocalizationManager.get_instance().current_locale == "en"
+    assert tr("settings.save_btn") == "💾 Save Settings"
+
+    # Перемикаємо на українську і зберігаємо
+    idx_uk = dlg.combo_ui_lang.findData("uk")
+    dlg.combo_ui_lang.setCurrentIndex(idx_uk)
+    dlg.save_settings()
+
+    assert cfg.get("ui_language") == "uk"
+    assert LocalizationManager.get_instance().current_locale == "uk"
+    assert tr("settings.save_btn") == "💾 Зберегти налаштування"
+
 

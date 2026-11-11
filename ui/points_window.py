@@ -14,6 +14,7 @@ from core.coordinate_parser import (
     MapPoint, POINT_CATEGORIES, get_category_info, detect_category_from_name
 )
 from core.points_manager import PointsManager
+from ui.color_picker import open_safe_color_dialog
 
 
 class PointRowWidget(QFrame):
@@ -330,14 +331,10 @@ class PointRowWidget(QFrame):
         self.mgr.update_point_color(self.point.id, c)
 
     def _pick_custom_color(self):
-        initial = QColor(self.point.color if getattr(self.point, "color", None) else "#38bdf8")
-        dlg = QColorDialog(initial, self)
-        dlg.setWindowTitle("Оберіть колір шпильки для карти")
-        dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
-        if dlg.exec():
-            col = dlg.selectedColor()
-            if col.isValid():
-                self._set_color(col.name())
+        initial = getattr(self.point, "color", None) or "#38bdf8"
+        col = open_safe_color_dialog(self, initial, "Оберіть колір шпильки для карти")
+        if col:
+            self._set_color(col)
 
     def _on_name_edited(self):
         new_name = self.txt_name.text().strip()

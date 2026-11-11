@@ -12,6 +12,7 @@ from core.config_manager import ConfigManager
 from core.languages import ALL_LANGUAGES
 from core.version import __version__, GITHUB_REPO_URL
 from core.updater import UpdateChecker, UpdateInfo
+from core.i18n import LocalizationManager, tr
 from ui.update_dialog import UpdateDialog
 
 
@@ -24,20 +25,22 @@ class HotkeyButton(QPushButton):
 
     def __init__(self, current_hotkey: str = "F9", parent=None):
         super().__init__(parent)
-        self.current_hotkey = current_hotkey
+        self.current_hotkey = current_hotkey or ""
         self.is_recording = False
-        self.setText(current_hotkey if current_hotkey else "— Не призначено —")
         self.setFixedWidth(140)
         self.setFixedHeight(30)
-        self.update_style()
+        self.set_hotkey(self.current_hotkey)
         self.clicked.connect(self.start_recording)
 
-    def clear_hotkey(self):
-        self.current_hotkey = ""
+    def set_hotkey(self, hotkey: str):
+        self.current_hotkey = hotkey or ""
         self.is_recording = False
-        self.setText("— Не призначено —")
+        self.setText(self.current_hotkey if self.current_hotkey else tr("settings.clear_bind", "— Не призначено —"))
         self.update_style()
-        self.hotkey_changed.emit("")
+        self.hotkey_changed.emit(self.current_hotkey)
+
+    def clear_hotkey(self):
+        self.set_hotkey("")
 
     def update_style(self):
         if self.is_recording:
@@ -49,6 +52,22 @@ class HotkeyButton(QPushButton):
                     border-radius: 6px;
                     font-weight: bold;
                     font-size: 11px;
+                }
+            """)
+        elif not self.current_hotkey:
+            self.setStyleSheet("""
+                QPushButton {
+                    background-color: #0f172a;
+                    color: #64748b;
+                    border: 1px dashed #334155;
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-style: italic;
+                }
+                QPushButton:hover {
+                    background-color: #1e293b;
+                    border-color: #38bdf8;
+                    color: #94a3b8;
                 }
             """)
         else:
@@ -69,7 +88,7 @@ class HotkeyButton(QPushButton):
 
     def start_recording(self):
         self.is_recording = True
-        self.setText("[ Натисніть клавішу... ]")
+        self.setText(f"[ {tr('settings.press_key', 'Натисніть клавішу...')} ]")
         self.update_style()
         self.setFocus()
 
@@ -88,7 +107,7 @@ class HotkeyButton(QPushButton):
 
         if key == Qt.Key.Key_Escape:
             self.is_recording = False
-            self.setText(self.current_hotkey if self.current_hotkey else "— Не призначено —")
+            self.setText(self.current_hotkey if self.current_hotkey else tr("settings.clear_bind", "— Не призначено —"))
             self.update_style()
             event.accept()
             return
@@ -154,7 +173,9 @@ class SettingsDialog(QDialog):
     def __init__(self, config_manager: ConfigManager, parent=None):
         super().__init__(parent)
         self.cfg = config_manager
-        self.setWindowTitle("Налаштування перекладача SCUM Chat")
+        ui_lang = self.cfg.get("ui_language", "uk")
+        LocalizationManager.get_instance().set_locale(ui_lang)
+        self.setWindowTitle(tr("settings.title"))
         self.setMinimumWidth(640)
         self.resize(680, 540)
 
@@ -278,7 +299,7 @@ class SettingsDialog(QDialog):
 
         # 0.1 Мова інтерфейсу програми
         r_ui_lang = QHBoxLayout()
-        lbl_ui_lang = QLabel("Мова інтерфейсу програми:")
+        lbl_ui_lang = QLabel(tr("settings.ui_language"))
         lbl_ui_lang.setFixedWidth(170)
         self.combo_ui_lang = QComboBox()
         self.combo_ui_lang.addItem("🇺🇦 Українська", "uk")
@@ -289,11 +310,11 @@ class SettingsDialog(QDialog):
         v_general.addLayout(r_ui_lang)
 
         # 0.2 Режим "Тільки Карта"
-        self.chk_enable_chat = QCheckBox("Увімкнути HUD-перекладач чату (зняти для режиму 'Тільки Карта')")
+        self.chk_enable_chat = QCheckBox(tr("settings.enable_chat"))
         v_general.addWidget(self.chk_enable_chat)
 
         # 0.3 Автозапуск Windows
-        self.chk_autostart = QCheckBox("Автозапуск програми разом із завантаженням Windows")
+        self.chk_autostart = QCheckBox(tr("settings.autostart"))
         v_general.addWidget(self.chk_autostart)
 
         # Розділювач
@@ -304,10 +325,10 @@ class SettingsDialog(QDialog):
 
         # 1. Шлях до логів SCUM
         r_log = QHBoxLayout()
-        lbl_log = QLabel("Файл логів (SCUM.log):")
+        lbl_log = QLabel(tr("settings.log_file"))
         lbl_log.setFixedWidth(170)
         self.txt_log_path = QLineEdit()
-        self.btn_browse = QPushButton("Огляд...")
+        self.btn_browse = QPushButton(tr("settings.browse_btn"))
         self.btn_browse.setFixedHeight(28)
         self.btn_browse.setStyleSheet("""
             QPushButton {
@@ -328,7 +349,7 @@ class SettingsDialog(QDialog):
 
         # 2. Мова чату
         r_lang = QHBoxLayout()
-        lbl_lang = QLabel("Мова перекладу чату:")
+        lbl_lang = QLabel(tr("settings.target_lang"))
         lbl_lang.setFixedWidth(170)
         self.combo_in_lang = QComboBox()
         self.combo_in_lang.setMaxVisibleItems(20)
@@ -340,7 +361,7 @@ class SettingsDialog(QDialog):
 
         # 3. Нікнейм гравця
         r_nick = QHBoxLayout()
-        lbl_nick = QLabel("Ваш ігровий нікнейм:")
+        lbl_nick = QLabel(tr("settings.own_nickname"))
         lbl_nick.setFixedWidth(170)
         self.txt_nickname = QLineEdit()
         self.txt_nickname.setPlaceholderText("Survivor")
@@ -350,16 +371,16 @@ class SettingsDialog(QDialog):
 
         # 4. Чорний список нікнеймів
         r_bl = QHBoxLayout()
-        lbl_bl = QLabel("Чорний список гравців:")
+        lbl_bl = QLabel(tr("settings.blacklist_title"))
         lbl_bl.setFixedWidth(170)
         self.txt_blacklist = QLineEdit()
-        self.txt_blacklist.setPlaceholderText("Нікнейми через кому: BadPlayer, Spammer1, TrollBot")
-        self.txt_blacklist.setToolTip("Повідомлення від цих гравців не перекладаються, а відображаються мовою оригіналу")
+        self.txt_blacklist.setPlaceholderText(tr("settings.blacklist_placeholder"))
+        self.txt_blacklist.setToolTip(tr("settings.blacklist_hint"))
         r_bl.addWidget(lbl_bl)
         r_bl.addWidget(self.txt_blacklist)
         v_general.addLayout(r_bl)
 
-        lbl_bl_hint = QLabel("💡 <i>Повідомлення від гравців із чорного списку зберігатимуть мову оригіналу без перекладу.</i>")
+        lbl_bl_hint = QLabel(tr("settings.blacklist_hint_html"))
         lbl_bl_hint.setStyleSheet("color: #94a3b8; font-size: 11px; margin-left: 175px;")
         v_general.addWidget(lbl_bl_hint)
 
@@ -370,14 +391,14 @@ class SettingsDialog(QDialog):
         v_general.addWidget(line1)
 
         # 4. Чекбокси
-        self.chk_show_orig = QCheckBox("Показувати оригінал тексту під перекладом")
+        self.chk_show_orig = QCheckBox(tr("settings.show_original"))
         v_general.addWidget(self.chk_show_orig)
 
-        self.chk_ignore_own = QCheckBox("Не перекладати власні повідомлення (свій нікнейм)")
+        self.chk_ignore_own = QCheckBox(tr("settings.ignore_own"))
         v_general.addWidget(self.chk_ignore_own)
 
         v_general.addStretch()
-        self.tabs.addTab(tab_general, "🎮 SCUM та Чат")
+        self.tabs.addTab(tab_general, tr("settings.tab_general"))
 
         # ────────── ТАБ 2: Вигляд та HUD ──────────
         tab_hud = QWidget()
@@ -387,13 +408,13 @@ class SettingsDialog(QDialog):
 
         # 1. Стиль рамки та скролбару
         r_mode = QHBoxLayout()
-        lbl_mode = QLabel("Стиль рамки / скролу:")
+        lbl_mode = QLabel(tr("settings.display_mode"))
         lbl_mode.setFixedWidth(170)
         self.combo_display_mode = QComboBox()
-        self.combo_display_mode.addItem("Без рамки і без скролбару", "none")
-        self.combo_display_mode.addItem("Тільки рамка", "border_only")
-        self.combo_display_mode.addItem("Тільки скролбар", "scrollbar_only")
-        self.combo_display_mode.addItem("Рамка та скролбар", "both")
+        self.combo_display_mode.addItem(tr("settings.display_mode_none"), "none")
+        self.combo_display_mode.addItem(tr("settings.display_mode_border"), "border_only")
+        self.combo_display_mode.addItem(tr("settings.display_mode_scrollbar"), "scrollbar_only")
+        self.combo_display_mode.addItem(tr("settings.display_mode_both"), "both")
         r_mode.addWidget(lbl_mode)
         r_mode.addWidget(self.combo_display_mode)
         v_hud.addLayout(r_mode)
@@ -413,11 +434,11 @@ class SettingsDialog(QDialog):
 
         # 2. Час показу (Fade)
         r_fade = QHBoxLayout()
-        lbl_fade = QLabel("Час показу повідомлення:")
+        lbl_fade = QLabel(tr("settings.fade_time"))
         lbl_fade.setFixedWidth(170)
         self.slider_fade = QSlider(Qt.Orientation.Horizontal)
         self.slider_fade.setRange(0, 60)
-        self.badge_fade = QLabel("10 сек")
+        self.badge_fade = QLabel(tr("settings.fade_seconds", seconds=10))
         self.badge_fade.setFixedWidth(90)
         self.badge_fade.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.badge_fade.setStyleSheet(badge_style)
@@ -429,7 +450,7 @@ class SettingsDialog(QDialog):
 
         # 3. Прозорість фону
         r_op = QHBoxLayout()
-        lbl_op = QLabel("Прозорість фону:")
+        lbl_op = QLabel(tr("settings.opacity"))
         lbl_op.setFixedWidth(170)
         self.slider_opacity = QSlider(Qt.Orientation.Horizontal)
         self.slider_opacity.setRange(0, 100)
@@ -445,7 +466,7 @@ class SettingsDialog(QDialog):
 
         # 4. Розмір шрифту
         r_font = QHBoxLayout()
-        lbl_font = QLabel("Розмір шрифту:")
+        lbl_font = QLabel(tr("settings.font_size"))
         lbl_font.setFixedWidth(170)
         self.slider_font = QSlider(Qt.Orientation.Horizontal)
         self.slider_font.setRange(10, 24)
@@ -461,30 +482,30 @@ class SettingsDialog(QDialog):
 
         # 5. Кількість рядків
         r_msgs = QHBoxLayout()
-        lbl_msgs = QLabel("Історія повідомлень:")
+        lbl_msgs = QLabel(tr("settings.max_messages"))
         lbl_msgs.setFixedWidth(170)
         self.slider_msgs = QSlider(Qt.Orientation.Horizontal)
         self.slider_msgs.setRange(5, 40)
-        self.badge_msgs = QLabel("20 рядків")
+        self.badge_msgs = QLabel(tr("settings.msgs_count", count=20))
         self.badge_msgs.setFixedWidth(90)
         self.badge_msgs.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.badge_msgs.setStyleSheet(badge_style)
-        self.slider_msgs.valueChanged.connect(lambda v: self.badge_msgs.setText(f"{v} рядків"))
+        self.slider_msgs.valueChanged.connect(lambda v: self.badge_msgs.setText(tr("settings.msgs_count", count=v)))
         r_msgs.addWidget(lbl_msgs)
         r_msgs.addWidget(self.slider_msgs)
         r_msgs.addWidget(self.badge_msgs)
         v_hud.addLayout(r_msgs)
 
         # 6. Жирний шрифт
-        self.chk_font_bold = QCheckBox("Жирний шрифт для перекладеного тексту (Bold)")
+        self.chk_font_bold = QCheckBox(tr("settings.font_bold"))
         v_hud.addWidget(self.chk_font_bold)
 
         # 7. Чорна обводка тексту
-        self.chk_text_outline = QCheckBox("Чорна обводка тексту (Text Outline) — для чіткості на будь-якому фоні")
+        self.chk_text_outline = QCheckBox(tr("settings.text_outline"))
         v_hud.addWidget(self.chk_text_outline)
 
         v_hud.addStretch()
-        self.tabs.addTab(tab_hud, "🎨 Вигляд та HUD")
+        self.tabs.addTab(tab_hud, tr("settings.tab_hud"))
 
         # ────────── ТАБ 3: Гарячі клавіші ──────────
         tab_keys = QWidget()
@@ -492,14 +513,31 @@ class SettingsDialog(QDialog):
         v_keys.setContentsMargins(8, 14, 8, 14)
         v_keys.setSpacing(12)
 
+        btn_clr_style = """
+            QPushButton {
+                background-color: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 4px;
+                color: #f87171;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #ef4444;
+                border-color: #f87171;
+                color: white;
+            }
+        """
+
         # Клавіша чату
         r_k_chat = QHBoxLayout()
-        lbl_k_chat = QLabel("💬 Відкриття чату SCUM:")
+        lbl_k_chat = QLabel(tr("settings.hotkey_chat"))
         lbl_k_chat.setFixedWidth(200)
         self.btn_k_chat = HotkeyButton(self.cfg.get("hotkey_quick_chat", "T"))
         btn_clr_chat = QPushButton("❌")
-        btn_clr_chat.setFixedSize(26, 26)
-        btn_clr_chat.setToolTip("Скинути гарячу клавішу")
+        btn_clr_chat.setFixedSize(28, 28)
+        btn_clr_chat.setStyleSheet(btn_clr_style)
+        btn_clr_chat.setToolTip("Скинути / очистити гарячу клавішу")
         btn_clr_chat.clicked.connect(self.btn_k_chat.clear_hotkey)
         r_k_chat.addWidget(lbl_k_chat)
         r_k_chat.addWidget(self.btn_k_chat)
@@ -509,12 +547,13 @@ class SettingsDialog(QDialog):
 
         # Блокування F9
         r_k_lock = QHBoxLayout()
-        lbl_k_lock = QLabel("🔒 Налаштування положення (F9):")
+        lbl_k_lock = QLabel(tr("settings.hotkey_lock", hotkey="F9"))
         lbl_k_lock.setFixedWidth(200)
         self.btn_k_lock = HotkeyButton(self.cfg.get("hotkey_toggle_lock", "F9"))
         btn_clr_lock = QPushButton("❌")
-        btn_clr_lock.setFixedSize(26, 26)
-        btn_clr_lock.setToolTip("Скинути гарячу клавішу")
+        btn_clr_lock.setFixedSize(28, 28)
+        btn_clr_lock.setStyleSheet(btn_clr_style)
+        btn_clr_lock.setToolTip("Скинути / очистити гарячу клавішу")
         btn_clr_lock.clicked.connect(self.btn_k_lock.clear_hotkey)
         r_k_lock.addWidget(lbl_k_lock)
         r_k_lock.addWidget(self.btn_k_lock)
@@ -524,12 +563,13 @@ class SettingsDialog(QDialog):
 
         # Видимість F8
         r_k_vis = QHBoxLayout()
-        lbl_k_vis = QLabel("👁 Показати / Сховати (F8):")
+        lbl_k_vis = QLabel(tr("settings.hotkey_vis", hotkey="F8"))
         lbl_k_vis.setFixedWidth(200)
         self.btn_k_vis = HotkeyButton(self.cfg.get("hotkey_toggle_visibility", "F8"))
         btn_clr_vis = QPushButton("❌")
-        btn_clr_vis.setFixedSize(26, 26)
-        btn_clr_vis.setToolTip("Скинути гарячу клавішу")
+        btn_clr_vis.setFixedSize(28, 28)
+        btn_clr_vis.setStyleSheet(btn_clr_style)
+        btn_clr_vis.setToolTip("Скинути / очистити гарячу клавішу")
         btn_clr_vis.clicked.connect(self.btn_k_vis.clear_hotkey)
         r_k_vis.addWidget(lbl_k_vis)
         r_k_vis.addWidget(self.btn_k_vis)
@@ -539,12 +579,13 @@ class SettingsDialog(QDialog):
 
         # Карта та список точок Ctrl+M
         r_k_map = QHBoxLayout()
-        lbl_k_map = QLabel("🗺 Відкрити Карту та Точки:")
+        lbl_k_map = QLabel(tr("settings.hotkey_map"))
         lbl_k_map.setFixedWidth(200)
         self.btn_k_map = HotkeyButton(self.cfg.get("hotkey_toggle_map", "Ctrl+M"))
         btn_clr_map = QPushButton("❌")
-        btn_clr_map.setFixedSize(26, 26)
-        btn_clr_map.setToolTip("Скинути гарячу клавішу")
+        btn_clr_map.setFixedSize(28, 28)
+        btn_clr_map.setStyleSheet(btn_clr_style)
+        btn_clr_map.setToolTip("Скинути / очистити гарячу клавішу")
         btn_clr_map.clicked.connect(self.btn_k_map.clear_hotkey)
         r_k_map.addWidget(lbl_k_map)
         r_k_map.addWidget(self.btn_k_map)
@@ -552,10 +593,37 @@ class SettingsDialog(QDialog):
         r_k_map.addStretch()
         v_keys.addLayout(r_k_map)
 
+        # Кнопка швидкого скидання всіх клавіш до стандартних значень
+        r_reset = QHBoxLayout()
+        btn_reset_all = QPushButton(tr("settings.hotkey_reset_all"))
+        btn_reset_all.setFixedHeight(30)
+        btn_reset_all.setStyleSheet("""
+            QPushButton {
+                background-color: #1e293b;
+                border: 1px solid #38bdf8;
+                border-radius: 6px;
+                color: #38bdf8;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 4px 14px;
+            }
+            QPushButton:hover {
+                background-color: #0284c7;
+                color: white;
+            }
+        """)
+        def reset_hotkeys_to_defaults():
+            self.btn_k_chat.set_hotkey("T")
+            self.btn_k_lock.set_hotkey("F9")
+            self.btn_k_vis.set_hotkey("F8")
+            self.btn_k_map.set_hotkey("Ctrl+M")
+
+        btn_reset_all.clicked.connect(reset_hotkeys_to_defaults)
+        r_reset.addWidget(btn_reset_all)
+        v_keys.addLayout(r_reset)
+
         # Підказка безпеки
-        lbl_hint = QLabel(
-            "💡 <b>Розумний захист:</b> оверлей та клавіша чату реагують тільки тоді, коли вікно гри SCUM відкрите й активне. Якщо гра згорнута або закрита — оверлей автоматично приховується і не перехоплює натискання клавіш."
-        )
+        lbl_hint = QLabel(tr("settings.hotkey_smart_guard"))
         lbl_hint.setWordWrap(True)
         lbl_hint.setStyleSheet("""
             background-color: rgba(2, 132, 199, 0.15);
@@ -569,7 +637,7 @@ class SettingsDialog(QDialog):
         v_keys.addWidget(lbl_hint)
 
         v_keys.addStretch()
-        self.tabs.addTab(tab_keys, "⌨ Гарячі клавіші")
+        self.tabs.addTab(tab_keys, tr("settings.tab_keys"))
 
         # ────────── ТАБ 4: Карта та Координати ──────────
         tab_map = QWidget()
@@ -578,12 +646,12 @@ class SettingsDialog(QDialog):
         v_map.setSpacing(12)
 
         # 1. Розділ: Інтерактивна Карта SCUM
-        lbl_sec_map = QLabel("🗺 <b>Параметри інтерактивної карти</b>")
+        lbl_sec_map = QLabel(tr("settings.map_sec_title"))
         lbl_sec_map.setStyleSheet("color: #38bdf8; font-size: 13px;")
         v_map.addWidget(lbl_sec_map)
 
         r_var = QHBoxLayout()
-        lbl_var = QLabel("Стиль мапи:")
+        lbl_var = QLabel(tr("settings.map_style"))
         lbl_var.setFixedWidth(170)
         self.combo_map_variant = QComboBox()
         self.combo_map_variant.addItem("🛰 Супутникова (Regular Satellite)", "regular")
@@ -592,13 +660,13 @@ class SettingsDialog(QDialog):
         r_var.addWidget(self.combo_map_variant)
         v_map.addLayout(r_var)
 
-        self.chk_map_grid = QCheckBox("Відображати основну сітку секторів (D0..Z4)")
+        self.chk_map_grid = QCheckBox(tr("settings.map_grid"))
         v_map.addWidget(self.chk_map_grid)
 
-        self.chk_map_keypads = QCheckBox("Відображати детальну сітку кейпадів (k1..k9) при наближенні")
+        self.chk_map_keypads = QCheckBox(tr("settings.map_keypads"))
         v_map.addWidget(self.chk_map_keypads)
 
-        self.chk_map_ontop = QCheckBox("Тримати вікна карти та списку поверх вікна гри (Always On Top)")
+        self.chk_map_ontop = QCheckBox(tr("settings.map_ontop"))
         v_map.addWidget(self.chk_map_ontop)
 
         # Розділювач
@@ -608,15 +676,15 @@ class SettingsDialog(QDialog):
         v_map.addWidget(line_map)
 
         # 2. Розділ: Точки та координати з чату
-        lbl_sec_points = QLabel("📍 <b>Автоматичний збір координат із чату</b>")
+        lbl_sec_points = QLabel(tr("settings.map_sec_points"))
         lbl_sec_points.setStyleSheet("color: #38bdf8; font-size: 13px;")
         v_map.addWidget(lbl_sec_points)
 
-        self.chk_auto_focus = QCheckBox("Автоматично фокусувати карту на новій точці з чату")
+        self.chk_auto_focus = QCheckBox(tr("settings.map_auto_focus"))
         v_map.addWidget(self.chk_auto_focus)
 
         # Кнопка скидання геометрії вікон
-        btn_reset_geo = QPushButton("🔄 Скинути положення та розміри вікна карти й списку")
+        btn_reset_geo = QPushButton(tr("settings.map_reset_geo"))
         btn_reset_geo.setFixedHeight(28)
         btn_reset_geo.setStyleSheet("""
             QPushButton {
@@ -634,7 +702,7 @@ class SettingsDialog(QDialog):
         v_map.addWidget(btn_reset_geo)
 
         v_map.addStretch()
-        self.tabs.addTab(tab_map, "🗺 Карта та Координати")
+        self.tabs.addTab(tab_map, tr("settings.tab_map"))
 
         # ────────── ТАБ 5: Оновлення ──────────
         tab_update = QWidget()
@@ -642,15 +710,15 @@ class SettingsDialog(QDialog):
         v_update.setContentsMargins(12, 16, 12, 16)
         v_update.setSpacing(14)
 
-        lbl_up_title = QLabel("SCUM Chat Translator & Tactical Map")
+        lbl_up_title = QLabel(tr("settings.update_title"))
         lbl_up_title.setStyleSheet("font-size: 15px; font-weight: bold; color: #38bdf8;")
         v_update.addWidget(lbl_up_title)
 
-        lbl_up_ver = QLabel(f"Поточна версія: <span style='color: #22c55e; font-weight: bold;'>v{__version__}</span>")
+        lbl_up_ver = QLabel(tr("settings.update_current_ver", version=__version__))
         lbl_up_ver.setStyleSheet("font-size: 13px;")
         v_update.addWidget(lbl_up_ver)
 
-        self.chk_auto_update = QCheckBox("Автоматично перевіряти оновлення при запуску програми")
+        self.chk_auto_update = QCheckBox(tr("settings.update_autocheck"))
         v_update.addWidget(self.chk_auto_update)
 
         up_shield = QFrame()
@@ -664,17 +732,14 @@ class SettingsDialog(QDialog):
         """)
         h_up_shield = QHBoxLayout(up_shield)
         h_up_shield.setContentsMargins(6, 4, 6, 4)
-        lbl_up_shield_text = QLabel(
-            "🛡️ <b>Гарантія збереження даних:</b> Оновлення програми ніколи не перезаписує "
-            "ваші налаштування (config.json) та збережені мітки карти (points.json)."
-        )
+        lbl_up_shield_text = QLabel(tr("settings.update_guarantee"))
         lbl_up_shield_text.setStyleSheet("color: #86efac; font-size: 11px;")
         lbl_up_shield_text.setWordWrap(True)
         h_up_shield.addWidget(lbl_up_shield_text)
         v_update.addWidget(up_shield)
 
         h_btn_check = QHBoxLayout()
-        self.btn_check_update = QPushButton("🔍 Перевірити наявність оновлень")
+        self.btn_check_update = QPushButton(tr("settings.update_check_btn"))
         self.btn_check_update.setFixedHeight(34)
         self.btn_check_update.setStyleSheet("""
             QPushButton {
@@ -692,7 +757,7 @@ class SettingsDialog(QDialog):
         self.btn_check_update.clicked.connect(self._manual_check_updates)
         h_btn_check.addWidget(self.btn_check_update)
 
-        btn_open_repo = QPushButton("🌐 GitHub Репозиторій")
+        btn_open_repo = QPushButton(tr("settings.update_github_btn"))
         btn_open_repo.setFixedHeight(34)
         btn_open_repo.setStyleSheet("""
             QPushButton {
@@ -715,7 +780,7 @@ class SettingsDialog(QDialog):
         v_update.addWidget(self.lbl_update_status)
 
         v_update.addStretch()
-        self.tabs.addTab(tab_update, "🔄 Оновлення")
+        self.tabs.addTab(tab_update, tr("settings.tab_update"))
 
         main_layout.addWidget(self.tabs)
 
@@ -723,7 +788,7 @@ class SettingsDialog(QDialog):
         bottom_buttons = QHBoxLayout()
         bottom_buttons.addStretch()
 
-        self.btn_save = QPushButton("💾 Зберегти налаштування")
+        self.btn_save = QPushButton(tr("settings.save_btn"))
         self.btn_save.setFixedHeight(32)
         self.btn_save.setStyleSheet("""
             QPushButton {
@@ -740,7 +805,7 @@ class SettingsDialog(QDialog):
         self.btn_save.clicked.connect(self.save_settings)
         bottom_buttons.addWidget(self.btn_save)
 
-        self.btn_cancel = QPushButton("Скасувати")
+        self.btn_cancel = QPushButton(tr("settings.cancel_btn"))
         self.btn_cancel.setFixedHeight(32)
         self.btn_cancel.setStyleSheet("""
             QPushButton {
@@ -761,9 +826,9 @@ class SettingsDialog(QDialog):
 
     def _on_fade_slider_changed(self, v: int):
         if v == 0:
-            self.badge_fade.setText("Завжди видно")
+            self.badge_fade.setText(tr("settings.fade_always"))
         else:
-            self.badge_fade.setText(f"{v} сек")
+            self.badge_fade.setText(tr("settings.fade_seconds", seconds=v))
 
     def load_settings(self):
         ui_lang = self.cfg.get("ui_language", "uk")
@@ -811,19 +876,12 @@ class SettingsDialog(QDialog):
 
         msgs_val = self.cfg.get("max_messages", 20)
         self.slider_msgs.setValue(msgs_val)
-        self.badge_msgs.setText(f"{msgs_val} рядків")
+        self.badge_msgs.setText(tr("settings.msgs_count", count=msgs_val))
 
-        self.btn_k_lock.setText(self.cfg.get("hotkey_toggle_lock", "F9"))
-        self.btn_k_lock.current_hotkey = self.cfg.get("hotkey_toggle_lock", "F9")
-
-        self.btn_k_vis.setText(self.cfg.get("hotkey_toggle_visibility", "F8"))
-        self.btn_k_vis.current_hotkey = self.cfg.get("hotkey_toggle_visibility", "F8")
-
-        self.btn_k_chat.setText(self.cfg.get("hotkey_quick_chat", "T"))
-        self.btn_k_chat.current_hotkey = self.cfg.get("hotkey_quick_chat", "T")
-
-        self.btn_k_map.setText(self.cfg.get("hotkey_toggle_map", "Ctrl+M"))
-        self.btn_k_map.current_hotkey = self.cfg.get("hotkey_toggle_map", "Ctrl+M")
+        self.btn_k_lock.set_hotkey(self.cfg.get("hotkey_toggle_lock", "F9"))
+        self.btn_k_vis.set_hotkey(self.cfg.get("hotkey_toggle_visibility", "F8"))
+        self.btn_k_chat.set_hotkey(self.cfg.get("hotkey_quick_chat", "T"))
+        self.btn_k_map.set_hotkey(self.cfg.get("hotkey_toggle_map", "Ctrl+M"))
 
         # Налаштування карти
         m_var = self.cfg.get("map_variant", "regular")
@@ -839,26 +897,26 @@ class SettingsDialog(QDialog):
 
     def _manual_check_updates(self):
         self.btn_check_update.setEnabled(False)
-        self.lbl_update_status.setText("⏳ Перевірка оновлень на GitHub...")
+        self.lbl_update_status.setText(tr("settings.update_checking"))
         self.lbl_update_status.setStyleSheet("color: #38bdf8; font-size: 12px;")
 
         checker = UpdateChecker()
 
         def on_update_available(info):
             self.btn_check_update.setEnabled(True)
-            self.lbl_update_status.setText(f"🔥 Доступна нова версія: v{info.version}!")
+            self.lbl_update_status.setText(tr("settings.update_available", version=info.version))
             self.lbl_update_status.setStyleSheet("color: #22c55e; font-size: 12px; font-weight: bold;")
             dlg = UpdateDialog(info, self)
             dlg.exec()
 
         def on_no_update(curr_ver):
             self.btn_check_update.setEnabled(True)
-            self.lbl_update_status.setText(f"✅ У вас встановлено найновішу версію (v{curr_ver}).")
+            self.lbl_update_status.setText(tr("settings.update_latest", version=curr_ver))
             self.lbl_update_status.setStyleSheet("color: #22c55e; font-size: 12px;")
 
         def on_error(err_msg):
             self.btn_check_update.setEnabled(True)
-            self.lbl_update_status.setText(f"❌ Помилка: {err_msg}")
+            self.lbl_update_status.setText(tr("settings.update_error", error=err_msg))
             self.lbl_update_status.setStyleSheet("color: #ef4444; font-size: 12px;")
 
         checker.update_available.connect(on_update_available)
@@ -882,7 +940,7 @@ class SettingsDialog(QDialog):
         default_dir = os.path.expandvars(r"%LOCALAPPDATA%\SCUM\Saved\Logs")
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Виберіть файл SCUM.log",
+            tr("settings.log_file", "Виберіть файл SCUM.log"),
             default_dir if os.path.exists(default_dir) else "",
             "Log Files (*.log);;All Files (*)"
         )
@@ -893,6 +951,7 @@ class SettingsDialog(QDialog):
         old_ui_lang = self.cfg.get("ui_language", "uk")
         new_ui_lang = self.combo_ui_lang.currentData()
         self.cfg.set("ui_language", new_ui_lang)
+        LocalizationManager.get_instance().set_locale(new_ui_lang)
         self.cfg.set("enable_chat_translator", self.chk_enable_chat.isChecked())
         
         autostart_val = self.chk_autostart.isChecked()

@@ -44,5 +44,9 @@
   "points_x": -1,
   "points_y": -1,
   "points_width": 960,
-  "points_height": 240
+  "points_height": 240,
+  "auto_check_updates": true,
+  "enable_chat_translator": true,
+  "ui_language": "uk",
+  "auto_start": true
 }

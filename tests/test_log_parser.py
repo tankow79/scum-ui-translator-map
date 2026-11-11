@@ -55,11 +55,22 @@ def test_parser_squad_message():
     captured = []
     parser = ScumLogParser("dummy.log", lambda *args: captured.append(args))
 
-    line = "[2026.11.03-18.00.00:100][ 88]LogSCUM: Message: (Squad) Teammate1: enemy at bunker"
-    parser._process_line(line)
-
+    # 1. Англійський префікс (Squad)
+    line1 = "[2026.11.03-18.00.00:100][ 88]LogSCUM: Message: (Squad) Teammate1: enemy at bunker"
+    parser._process_line(line1)
     assert len(captured) == 1
-    t, sender, msg, m_type = captured[0]
-    assert sender == "(Squad) Teammate1"
-    assert msg == "enemy at bunker"
-    assert m_type == "squad"
+    assert captured[0][1] == "(Squad) Teammate1"
+    assert captured[0][2] == "enemy at bunker"
+    assert captured[0][3] == "squad"
+
+    # 2. Префікс [Squad] у тексті
+    line2 = "[2026.11.03-18.00.05:100][ 88]LogSCUM: Message: Teammate2: [Squad] take ammo"
+    parser._process_line(line2)
+    assert len(captured) == 2
+    assert captured[1][3] == "squad"
+
+    # 3. Кирилиця (Сквад)
+    line3 = "[2026.11.03-18.00.10:100][ 88]LogSCUM: Message: (Сквад) Friend: тут лут"
+    parser._process_line(line3)
+    assert len(captured) == 3
+    assert captured[2][3] == "squad"
