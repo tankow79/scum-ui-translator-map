@@ -41,11 +41,9 @@ _apply_update.bat
 *.exe.old
 *.exe.new
 
-# Release binaries are published through GitHub Releases, never committed
-release/*.exe
-release/*.zip
-release/config.json
-release/ANTIGRAVITY_CHATS_DISPATCH.md
 
 # Local Claude Code settings (agents in .claude/agents are shared)
 .claude/settings.local.json
+
+# Local leftovers of the old manual release flow
+release/
