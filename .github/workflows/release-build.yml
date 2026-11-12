@@ -1,7 +1,7 @@
 name: Build release binaries
 
-# Pushing a tag such as v2.1.0 builds both executables and attaches them (with SHA-256 digests shown by
-# GitHub) to the release of that tag. Create/publish the release itself manually on GitHub.
+# Pushing a tag such as v2.1.0 builds both executables and publishes a release for that tag, using
+# .github/release-notes/<tag>.md as the description (GitHub shows SHA-256 digests for the assets).
 on:
   push:
     tags: ["v*"]
@@ -31,7 +31,9 @@ jobs:
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          name: SCUM Tactical Map & Chat Translator ${{ github.ref_name }}
+          body_path: .github/release-notes/${{ github.ref_name }}.md
+          draft: false
           files: |
             dist/SCUM_Chat_Translator.exe
             dist/SCUM_Chat_Translator_Portable.exe
