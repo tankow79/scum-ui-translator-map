@@ -9,15 +9,20 @@ Design rules that keep every translation readable:
 
 from typing import Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QSlider,
+    QStyle,
+    QStyleOptionButton,
+    QStylePainter,
     QVBoxLayout,
     QWidget,
 )
@@ -30,9 +35,36 @@ def muted_label(text: str) -> QLabel:
     return lbl
 
 
-def make_button(text: str, role: Optional[str] = None, tooltip: str = ""):
-    from PyQt6.QtWidgets import QPushButton
-    btn = QPushButton(text.replace("&", "&&"))
+class ElideButton(QPushButton):
+    """Push button that shrinks below its text width: the caption is elided with "…" and shown fully as tooltip."""
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self._custom_tooltip = ""
+        # Preferred (not Minimum) so layouts may squeeze the button down to minimumSizeHint.
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+
+    def setToolTip(self, tip: str):  # noqa: N802 - Qt API
+        self._custom_tooltip = tip
+        super().setToolTip(tip)
+
+    def minimumSizeHint(self):  # noqa: N802
+        return QSize(80, super().sizeHint().height())
+
+    def paintEvent(self, _event):  # noqa: N802
+        painter = QStylePainter(self)
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        available = max(10, self.width() - 28)
+        elided = self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, available)
+        option.text = elided
+        if not self._custom_tooltip:
+            QPushButton.setToolTip(self, self.text() if elided != self.text() else "")
+        painter.drawControl(QStyle.ControlElement.CE_PushButton, option)
+
+
+def make_button(text: str, role: Optional[str] = None, tooltip: str = "") -> QPushButton:
+    btn = ElideButton(text)
     if role:
         btn.setProperty("role", role)
     if tooltip:
@@ -114,6 +146,9 @@ class Section(QWidget):
         lbl = QLabel(label)
         lbl.setWordWrap(True)
         box.addWidget(lbl)
+        if isinstance(control, QComboBox):  # never let the longest item dictate the window width
+            control.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            control.setMinimumContentsLength(12)
         box.addWidget(control)
         if hint:
             box.addWidget(muted_label(hint))

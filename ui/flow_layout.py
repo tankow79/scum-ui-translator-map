@@ -52,6 +52,8 @@ class FlowLayout(QLayout):
         x, y, line_height = area.x(), area.y(), 0
         for item in self._items:
             hint = item.sizeHint()
+            if hint.width() > area.width() > 0:
+                hint = QSize(area.width(), hint.height())  # too wide for one line: let the item shrink
             next_x = x + hint.width()
             if next_x > area.right() + 1 and line_height > 0:
                 x = area.x()

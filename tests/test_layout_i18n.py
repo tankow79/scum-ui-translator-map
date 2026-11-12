@@ -11,6 +11,7 @@ from core.i18n import LocalizationManager
 from core.points_manager import PointsManager
 from core.profiles import ProfileManager
 from core.translator import GoogleTranslatorEngine
+from ui.settings_widgets import ElideButton
 
 
 @pytest.fixture(scope="module")
@@ -46,6 +47,8 @@ def clipped_buttons(root):
     bad = []
     for btn in root.findChildren(QPushButton):
         text = btn.text()
+        if isinstance(btn, ElideButton):  # elides by design; overflow is caught by the page-width assertions
+            continue
         if btn.isVisibleTo(root) and text and btn.width() < btn.fontMetrics().horizontalAdvance(text):
             bad.append(text)
     return bad
