@@ -97,7 +97,7 @@
     "cancel_btn": "Cancel",
     "clear_bind": "— Not assigned —",
     "press_key": "Press key...",
-    "language_hint": "Pick the language of menus and windows. To add a language, copy assets/locales/en.json to <code>.json, translate the values and restart the app; it will appear here automatically. Reopen this window after saving to refresh its texts.",
+    "language_hint": "Pick the language of menus and windows. To add a language, copy assets/locales/en.json to CODE.json, translate the values and restart the app; it will appear here automatically. Reopen this window after saving to refresh its texts.",
     "language_open_folder": "Open languages folder",
     "words_group": "Blocked words",
     "words_enable": "Enable the blocked-word filter",
