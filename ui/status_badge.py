@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QPoint, QRectF, Qt
-from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PyQt6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPen
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from core.config_manager import ConfigManager
@@ -15,6 +15,8 @@ class StatusBadge(QWidget):
     - Freely draggable with the mouse in setup mode (F9).
     - Click-through for the mouse during gameplay.
     """
+    _STATUS_TEXTS = ("ON", "OFF")
+
     def __init__(self, config_manager: ConfigManager, parent=None):
         super().__init__(parent)
         self.cfg = config_manager
@@ -22,10 +24,17 @@ class StatusBadge(QWidget):
         self.is_locked = True
         self._drag_pos = QPoint()
 
-        self.setFixedSize(86, 28)
+        self._font = QFont("Segoe UI", 10, QFont.Weight.Bold)
+        self._fit_size()
         self.init_window_flags()
         self.apply_geometry()
         self.update_lock_state()
+
+    def _fit_size(self):
+        """Size the capsule from the widest status text so nothing is clipped."""
+        fm = QFontMetrics(self._font)
+        text_w = max(fm.horizontalAdvance(t) for t in self._STATUS_TEXTS)
+        self.setFixedSize(max(86, 28 + text_w + 14), max(28, fm.height() + 10))
 
     def init_window_flags(self):
         self.setWindowFlags(
@@ -99,7 +108,7 @@ class StatusBadge(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         rect = QRectF(1.0, 1.0, self.width() - 2.0, self.height() - 2.0)
-        radius = 13.0
+        radius = self.height() / 2.0 - 1.0
 
         # Capsule background (translucent dark glass)
         bg_color = QColor(15, 23, 42, 220)
@@ -140,11 +149,10 @@ class StatusBadge(QWidget):
 
         # Status text (ON / OFF)
         painter.setPen(QPen(text_color))
-        font = QFont("Segoe UI", 10, QFont.Weight.Bold)
-        painter.setFont(font)
+        painter.setFont(self._font)
 
         # Center the label next to the dot
-        text_rect = QRectF(28.0, 0.0, self.width() - 32.0, float(self.height()))
+        text_rect = QRectF(28.0, 0.0, self.width() - 28.0, float(self.height()))
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, status_text)
 
     # ──────────────── Mouse dragging in F9 mode ────────────────

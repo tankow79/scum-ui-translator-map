@@ -1,125 +1,67 @@
-"""
-Full list of all languages supported by Google Translate.
-Popular languages are listed first for convenience.
+"""Languages supported by the translation service.
+
+Each entry is ``(code, English name, native name)``. The UI shows ``"English name — native name"`` so users can
+always find their language, whatever the interface language is. Popular languages are listed first.
 """
 
 from typing import List, Tuple
 
-# List of tuples: (UI display name, language code)
-ALL_LANGUAGES: List[Tuple[str, str]] = [
-    # --- Popular languages ---
-    ("🇺🇦 Українська (Ukrainian)", "uk"),
-    ("🇬🇧 English (Англійська)", "en"),
-    ("🇵🇱 Polski (Польська)", "pl"),
-    ("🇩🇪 Deutsch (Німецька)", "de"),
-    ("🇫🇷 Français (Французька)", "fr"),
-    ("🇪🇸 Español (Іспанська)", "es"),
-    ("🇮🇹 Italiano (Італійська)", "it"),
-    ("🇹🇷 Türkçe (Турецька)", "tr"),
-    ("🇨🇿 Čeština (Чеська)", "cs"),
-    ("🇸🇰 Slovenčina (Словацька)", "sk"),
-    ("🇷🇴 Română (Румунська)", "ro"),
-    ("🇭🇺 Magyar (Угорська)", "hu"),
-    ("🇧🇬 Български (Болгарська)", "bg"),
-    ("🇭🇷 Hrvatski (Хорватська)", "hr"),
-    ("🇷🇸 Srpski (Сербська)", "sr"),
-    ("🇸🇮 Slovenščina (Словенська)", "sl"),
-    ("🇳🇱 Nederlands (Нідерландська)", "nl"),
-    ("🇸🇪 Svenska (Шведська)", "sv"),
-    ("🇳🇴 Norsk (Норвезька)", "no"),
-    ("🇫🇮 Suomi (Фінська)", "fi"),
-    ("🇩🇰 Dansk (Данська)", "da"),
-    ("🇬🇷 Ελληνικά (Грецька)", "el"),
-    ("🇱🇹 Lietuvių (Литовська)", "lt"),
-    ("🇱🇻 Latviešu (Латиська)", "lv"),
-    ("🇪🇪 Eesti (Естонська)", "et"),
-    ("🇷🇺 Русский (Російська)", "ru"),
-    ("🇯🇵 日本語 (Японська)", "ja"),
-    ("🇰🇷 한국어 (Корейська)", "ko"),
-    ("🇨🇳 中文 (Спрощена китайська)", "zh-CN"),
-    ("🇹🇼 繁體中文 (Традиційна китайська)", "zh-TW"),
-    ("🇦🇪 العربية (Арабська)", "ar"),
-    ("🇮🇱 עברית (Іврит)", "he"),
-    ("🇮🇳 हिन्दी (Хінді)", "hi"),
-    ("🇮🇩 Bahasa Indonesia (Індонезійська)", "id"),
-    ("🇻🇳 Tiếng Việt (В'єтнамська)", "vi"),
-    ("🇹🇭 ไทย (Тайська)", "th"),
-    ("🇬🇪 ქართული (Грузинська)", "ka"),
-    ("🇦🇲 Հայերեն (Вірменська)", "hy"),
-    ("🇦🇿 Azərbaycan (Азербайджанська)", "az"),
-    ("🇰🇿 Қазақ (Казахська)", "kk"),
-    ("🇺🇿 O'zbek (Узбецька)", "uz"),
-
-    # --- Other languages, alphabetical ---
-    ("Afrikaans (Африкаанс)", "af"),
-    ("Shqip (Албанська)", "sq"),
-    ("Amharic (Амхарська)", "am"),
-    ("Euskara (Баскська)", "eu"),
-    ("Беларуская (Білоруська)", "be"),
-    ("বাংলা (Бенгальська)", "bn"),
-    ("Bosanski (Боснійська)", "bs"),
-    ("Català (Каталонська)", "ca"),
-    ("Cebuano (Себуано)", "ceb"),
-    ("Corsu (Корсиканська)", "co"),
-    ("Esperanto (Есперанто)", "eo"),
-    ("Filipino (Тагальська)", "fil"),
-    ("Frysk (Фризька)", "fy"),
-    ("Galego (Галісійська)", "gl"),
-    ("ગુજરાતી (Гуджараті)", "gu"),
-    ("Kreyòl Ayisyen (Гаїтянська)", "ht"),
-    ("Hausa (Хауса)", "ha"),
-    ("Hawaiian (Гавайська)", "haw"),
-    ("Hmong (Хмонг)", "hmn"),
-    ("Íslenska (Ісландська)", "is"),
-    ("Igbo (Ігбо)", "ig"),
-    ("Gaeilge (Ірландська)", "ga"),
-    ("Basa Jawa (Яванська)", "jv"),
-    ("ಕನ್ನಡ (Каннада)", "kn"),
-    ("ភាសាខ្មែរ (Кхмерська)", "km"),
-    ("Kinyarwanda (Кіньяруанда)", "rw"),
-    ("Kurdî (Курдська)", "ku"),
-    ("Кыргызча (Киргизька)", "ky"),
-    ("ລາວ (Лаоська)", "lo"),
-    ("Latina (Латина)", "la"),
-    ("Lëtzebuergesch (Люксембурзька)", "lb"),
-    ("Македонски (Македонська)", "mk"),
-    ("Malagasy (Малагасійська)", "mg"),
-    ("Bahasa Melayu (Малайська)", "ms"),
-    ("മലയാളം (Малаялам)", "ml"),
-    ("Malti (Мальтійська)", "mt"),
-    ("Māori (Маорі)", "mi"),
-    ("मराठी (Маратхі)", "mr"),
-    ("Монгол (Монгольська)", "mn"),
-    ("မြန်မာ (Бірманська)", "my"),
-    ("नेपाली (Непальська)", "ne"),
-    ("Odia (Одія)", "or"),
-    ("پښتو (Пушту)", "ps"),
-    ("فارسی (Перська)", "fa"),
-    ("Português (Португальська)", "pt"),
-    ("ਪੰਜਾਬੀ (Пенджабі)", "pa"),
-    ("Gàidhlig (Шотландська гельська)", "gd"),
-    ("Sesotho (Сесото)", "st"),
-    ("Shona (Шона)", "sn"),
-    ("سنڌي (Синдхі)", "sd"),
-    ("සිංහල (Сингальська)", "si"),
-    ("Soomaali (Сомалійська)", "so"),
-    ("Basa Sunda (Сунданська)", "su"),
-    ("Kiswahili (Суахілі)", "sw"),
-    ("Тоҷикӣ (Таджицька)", "tg"),
-    ("தமிழ் (Тамільська)", "ta"),
-    ("Татарча (Татарська)", "tt"),
-    ("తెలుగు (Телугу)", "te"),
-    ("Türkmen (Туркменська)", "tk"),
-    ("ئۇيغۇرچە (Уйгурська)", "ug"),
-    ("اردو (Урду)", "ur"),
-    ("Cymraeg (Валлійська)", "cy"),
-    ("isiXhosa (Коса)", "xh"),
-    ("ייִדיש (Їдиш)", "yi"),
-    ("Yorùbá (Йоруба)", "yo"),
-    ("isiZulu (Зулу)", "zu")
+_POPULAR = [
+    ("uk", "Ukrainian", "Українська"), ("en", "English", "English"), ("pl", "Polish", "Polski"),
+    ("de", "German", "Deutsch"), ("fr", "French", "Français"), ("es", "Spanish", "Español"),
+    ("it", "Italian", "Italiano"), ("tr", "Turkish", "Türkçe"), ("cs", "Czech", "Čeština"),
+    ("sk", "Slovak", "Slovenčina"), ("ro", "Romanian", "Română"), ("hu", "Hungarian", "Magyar"),
+    ("bg", "Bulgarian", "Български"), ("hr", "Croatian", "Hrvatski"), ("sr", "Serbian", "Srpski"),
+    ("sl", "Slovenian", "Slovenščina"), ("nl", "Dutch", "Nederlands"), ("sv", "Swedish", "Svenska"),
+    ("no", "Norwegian", "Norsk"), ("fi", "Finnish", "Suomi"), ("da", "Danish", "Dansk"),
+    ("el", "Greek", "Ελληνικά"), ("lt", "Lithuanian", "Lietuvių"), ("lv", "Latvian", "Latviešu"),
+    ("et", "Estonian", "Eesti"), ("ru", "Russian", "Русский"), ("ja", "Japanese", "日本語"),
+    ("ko", "Korean", "한국어"), ("zh-CN", "Chinese (Simplified)", "中文"),
+    ("zh-TW", "Chinese (Traditional)", "繁體中文"), ("ar", "Arabic", "العربية"), ("he", "Hebrew", "עברית"),
+    ("hi", "Hindi", "हिन्दी"), ("id", "Indonesian", "Bahasa Indonesia"), ("vi", "Vietnamese", "Tiếng Việt"),
+    ("th", "Thai", "ไทย"), ("ka", "Georgian", "ქართული"), ("hy", "Armenian", "Հայերեն"),
+    ("az", "Azerbaijani", "Azərbaycan"), ("kk", "Kazakh", "Қазақ"), ("uz", "Uzbek", "O'zbek"),
 ]
 
+_OTHER = [
+    ("af", "Afrikaans", "Afrikaans"), ("sq", "Albanian", "Shqip"), ("am", "Amharic", "አማርኛ"),
+    ("eu", "Basque", "Euskara"), ("be", "Belarusian", "Беларуская"), ("bn", "Bengali", "বাংলা"),
+    ("bs", "Bosnian", "Bosanski"), ("ca", "Catalan", "Català"), ("ceb", "Cebuano", "Cebuano"),
+    ("co", "Corsican", "Corsu"), ("eo", "Esperanto", "Esperanto"), ("fil", "Filipino", "Filipino"),
+    ("fy", "Frisian", "Frysk"), ("gl", "Galician", "Galego"), ("gu", "Gujarati", "ગુજરાતી"),
+    ("ht", "Haitian Creole", "Kreyòl Ayisyen"), ("ha", "Hausa", "Hausa"), ("haw", "Hawaiian", "ʻŌlelo Hawaiʻi"),
+    ("hmn", "Hmong", "Hmong"), ("is", "Icelandic", "Íslenska"), ("ig", "Igbo", "Igbo"),
+    ("ga", "Irish", "Gaeilge"), ("jv", "Javanese", "Basa Jawa"), ("kn", "Kannada", "ಕನ್ನಡ"),
+    ("km", "Khmer", "ភាសាខ្មែរ"), ("rw", "Kinyarwanda", "Kinyarwanda"), ("ku", "Kurdish", "Kurdî"),
+    ("ky", "Kyrgyz", "Кыргызча"), ("lo", "Lao", "ລາວ"), ("la", "Latin", "Latina"),
+    ("lb", "Luxembourgish", "Lëtzebuergesch"), ("mk", "Macedonian", "Македонски"),
+    ("mg", "Malagasy", "Malagasy"), ("ms", "Malay", "Bahasa Melayu"), ("ml", "Malayalam", "മലയാളം"),
+    ("mt", "Maltese", "Malti"), ("mi", "Maori", "Māori"), ("mr", "Marathi", "मराठी"),
+    ("mn", "Mongolian", "Монгол"), ("my", "Burmese", "မြန်မာ"), ("ne", "Nepali", "नेपाली"),
+    ("or", "Odia", "ଓଡ଼ିଆ"), ("ps", "Pashto", "پښتو"), ("fa", "Persian", "فارسی"),
+    ("pt", "Portuguese", "Português"), ("pa", "Punjabi", "ਪੰਜਾਬੀ"), ("gd", "Scottish Gaelic", "Gàidhlig"),
+    ("st", "Sesotho", "Sesotho"), ("sn", "Shona", "Shona"), ("sd", "Sindhi", "سنڌي"),
+    ("si", "Sinhala", "සිංහල"), ("so", "Somali", "Soomaali"), ("su", "Sundanese", "Basa Sunda"),
+    ("sw", "Swahili", "Kiswahili"), ("tg", "Tajik", "Тоҷикӣ"), ("ta", "Tamil", "தமிழ்"),
+    ("tt", "Tatar", "Татарча"), ("te", "Telugu", "తెలుగు"), ("tk", "Turkmen", "Türkmen"),
+    ("ug", "Uyghur", "ئۇيغۇرچە"), ("ur", "Urdu", "اردو"), ("cy", "Welsh", "Cymraeg"),
+    ("xh", "Xhosa", "isiXhosa"), ("yi", "Yiddish", "ייִדיש"), ("yo", "Yoruba", "Yorùbá"),
+    ("zu", "Zulu", "isiZulu"),
+]
+
+
+def _label(english: str, native: str) -> str:
+    return english if english == native else f"{english} — {native}"
+
+
+# List of tuples: (UI display name, language code). Popular first, the rest alphabetical by English name.
+ALL_LANGUAGES: List[Tuple[str, str]] = (
+    [(_label(en, native), code) for code, en, native in _POPULAR]
+    + [(_label(en, native), code) for code, en, native in sorted(_OTHER, key=lambda item: item[1].lower())]
+)
+
 LANGUAGE_DICT = {code: name for name, code in ALL_LANGUAGES}
+
 
 def get_language_name(code: str) -> str:
     return LANGUAGE_DICT.get(code, code)

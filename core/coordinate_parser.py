@@ -90,49 +90,49 @@ def get_sector_info(norm_x: float, norm_y: float) -> Tuple[str, str]:
 POINT_CATEGORIES: Dict[str, Dict[str, Any]] = {
     "default": {
         "id": "default",
-        "name": "Просто мітка",
+        "name": "Waypoint",
         "emoji": "📍",
         "default_color": "#38bdf8",
         "keywords": ["метка", "точка", "мітка", "point", "marker"]
     },
     "base": {
         "id": "base",
-        "name": "База",
+        "name": "Base",
         "emoji": "🏠",
         "default_color": "#a855f7",
         "keywords": ["база", "баз", "base", "хата", "хат", "дім", "дом", "кемп", "camp"]
     },
     "car": {
         "id": "car",
-        "name": "Машина",
+        "name": "Car",
         "emoji": "🚗",
         "default_color": "#f59e0b",
         "keywords": ["машина", "машин", "авто", "тачка", "тачк", "car", "suv", "truck", "пікап", "пикап"]
     },
     "plane": {
         "id": "plane",
-        "name": "Літак",
+        "name": "Plane",
         "emoji": "✈️",
         "default_color": "#0ea5e9",
         "keywords": ["літак", "самолет", "самольот", "plane", "airplane", "кукурузник", "авіа"]
     },
     "moto": {
         "id": "moto",
-        "name": "Мотоцикл",
+        "name": "Motorcycle",
         "emoji": "🏍️",
         "default_color": "#f97316",
         "keywords": ["мотоцик", "мотоцикл", "мото", "байк", "bike", "motorcycle"]
     },
     "boat": {
         "id": "boat",
-        "name": "Лодка",
+        "name": "Boat",
         "emoji": "🚤",
         "default_color": "#06b6d4",
         "keywords": ["лодка", "лодк", "човен", "чов", "катер", "boat", "яхта", "яхт"]
     },
     "cache": {
         "id": "cache",
-        "name": "Схрон",
+        "name": "Cache",
         "emoji": "📦",
         "default_color": "#10b981",
         "keywords": ["схрон", "сундук", "лут", "ящик", "заначка", "заначк", "cache", "loot", "chest"]
@@ -155,6 +155,13 @@ def detect_category_from_name(name: str) -> str:
             if kw in low:
                 return cat_id
     return "default"
+
+
+def get_category_label(category_id: Optional[str]) -> str:
+    """Localised display name of a category (key ``categories.<id>``; the English ``name`` is the fallback)."""
+    from core.i18n import tr
+    info = get_category_info(category_id)
+    return tr(f"categories.{info['id']}", default=info["name"])
 
 
 def get_category_info(category_id: Optional[str]) -> Dict[str, Any]:

@@ -30,6 +30,7 @@ from ui.overlay import ChatOverlay
 from ui.points_window import PointsWindow
 from ui.settings_window import SettingsDialog
 from ui.status_badge import StatusBadge
+from ui.theme import APP_QSS, MENU_QSS, mnemonic_safe
 from ui.update_dialog import UpdateDialog
 from utils.win_api import (
     check_single_instance,
@@ -96,6 +97,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    app.setStyleSheet(APP_QSS)
 
     # Set the application icon
     base_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -105,9 +107,13 @@ def main():
     else:
         app.setWindowIcon(QIcon(create_tray_icon_pixmap()))
 
+    # A user file that vanished or got corrupted during an update is restored before settings are loaded.
+    UpdateInstaller.restore_damaged_user_data()
     cfg = ConfigManager()
     LocalizationManager.get_instance().set_locale(cfg.get("ui_language", "en"))
     UpdateInstaller.cleanup_leftovers()
+    # Once the app has been running fine for a while, the update backups are no longer needed.
+    QTimer.singleShot(15000, UpdateInstaller.remove_backups)
 
     translator = GoogleTranslatorEngine(
         target_lang=cfg.get("target_language", "en"),
@@ -364,6 +370,11 @@ def main():
     def on_settings_changed():
         LocalizationManager.get_instance().set_locale(cfg.get("ui_language", "en"))
         history.set_max_entries(int(cfg.get("history_max_entries", 5000)))
+        new_hours = float(cfg.get("update_check_interval_hours", 6) or 0)
+        if new_hours > 0:
+            update_timer.start(int(new_hours * 3600 * 1000))
+        else:
+            update_timer.stop()
         translator.update_settings(
             target_lang=cfg.get("target_language", "uk"),
             source_lang=cfg.get("source_language", "auto")
@@ -426,6 +437,7 @@ def main():
     # System tray
     tray = QSystemTrayIcon(QIcon(create_tray_icon_pixmap(has_update=False)), app)
     tray_menu = QMenu()
+    tray_menu.setStyleSheet(MENU_QSS)
 
     # Application updates
     cached_update_info: Optional[UpdateInfo] = None
@@ -454,7 +466,7 @@ def main():
         # 1. Show the update indicator on the tray icon
         tray.setIcon(QIcon(create_tray_icon_pixmap(has_update=True)))
         tray.setToolTip(tr("tray.tooltip_update", version=__version__, new_version=info.version))
-        action_install_update.setText(tr("tray.update_btn_version", version=info.version))
+        action_install_update.setText(mnemonic_safe(tr("tray.update_btn_version", version=info.version)))
         action_install_update.setVisible(True)
         # 2. Windows tray notification
         tray.showMessage(
@@ -550,9 +562,9 @@ def main():
 
     def rebuild_profiles_menu():
         profiles_menu.clear()
-        profiles_menu.setTitle(tr("tray.profiles", profile=profiles.active))
+        profiles_menu.setTitle(mnemonic_safe(tr("tray.profiles", profile=profiles.active)))
         for name in profiles.names():
-            act = QAction(("● " if name == profiles.active else "    ") + name, profiles_menu)
+            act = QAction(mnemonic_safe(("● " if name == profiles.active else "    ") + name), profiles_menu)
             act.triggered.connect(lambda _checked=False, n=name: switch_profile(n))
             profiles_menu.addAction(act)
 
@@ -578,21 +590,21 @@ def main():
         k_vis = cfg.get("hotkey_toggle_visibility", "F8")
         is_chat_on = cfg.get("enable_chat_translator", True)
 
-        action_chat.setText(tr("tray.open_chat", hotkey=k_chat if k_chat else "—"))
-        action_map.setText(tr("tray.map_and_points", hotkey=k_map if k_map else "—"))
-        action_lock.setText(tr("tray.toggle_lock", hotkey=k_lock if k_lock else "—"))
-        action_vis.setText(tr("tray.toggle_vis", hotkey=k_vis if k_vis else "—"))
-        action_test.setText(tr("tray.test_msg"))
-        action_check_update.setText(tr("tray.check_updates"))
-        action_settings.setText(tr("tray.settings"))
-        action_history.setText(tr("tray.history"))
+        action_chat.setText(mnemonic_safe(tr("tray.open_chat", hotkey=k_chat if k_chat else "—")))
+        action_map.setText(mnemonic_safe(tr("tray.map_and_points", hotkey=k_map if k_map else "—")))
+        action_lock.setText(mnemonic_safe(tr("tray.toggle_lock", hotkey=k_lock if k_lock else "—")))
+        action_vis.setText(mnemonic_safe(tr("tray.toggle_vis", hotkey=k_vis if k_vis else "—")))
+        action_test.setText(mnemonic_safe(tr("tray.test_msg")))
+        action_check_update.setText(mnemonic_safe(tr("tray.check_updates")))
+        action_settings.setText(mnemonic_safe(tr("tray.settings")))
+        action_history.setText(mnemonic_safe(tr("tray.history")))
         rebuild_profiles_menu()
-        action_quit.setText(tr("tray.exit"))
+        action_quit.setText(mnemonic_safe(tr("tray.exit")))
 
         if is_chat_on:
-            action_mode_toggle.setText(f"✔ {tr('tray.mode_full')}")
+            action_mode_toggle.setText(mnemonic_safe(f"✔ {tr('tray.mode_full')}"))
         else:
-            action_mode_toggle.setText(f"🗺 {tr('tray.mode_map_only')}")
+            action_mode_toggle.setText(mnemonic_safe(f"🗺 {tr('tray.mode_map_only')}"))
 
         tray.setToolTip(tr("tray.tooltip", version=__version__))
 

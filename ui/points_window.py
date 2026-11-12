@@ -1,7 +1,8 @@
+import re
 from typing import Dict
 
 from PyQt6.QtCore import QPoint, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QKeyEvent, QMouseEvent
+from PyQt6.QtGui import QFontMetrics, QKeyEvent, QMouseEvent, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -14,15 +15,78 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizeGrip,
+    QSizePolicy,
+    QStyle,
+    QStyleOptionButton,
+    QStylePainter,
     QVBoxLayout,
     QWidget,
 )
 
 from core.config_manager import ConfigManager
-from core.coordinate_parser import POINT_CATEGORIES, MapPoint, get_category_info
+from core.coordinate_parser import POINT_CATEGORIES, MapPoint, get_category_info, get_category_label
 from core.i18n import tr
 from core.points_manager import PointsManager
 from ui.color_picker import open_safe_color_dialog
+
+
+def _plain(text: str) -> str:
+    """Strips simple HTML tags from a translated string."""
+    return re.sub(r"<[^>]+>", "", text)
+
+
+class ElidedLabel(QLabel):
+    """Single-line label that shrinks below its text width and elides with an ellipsis."""
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(parent)
+        self._full = ""
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setText(text)
+
+    def setText(self, text: str):  # noqa: N802
+        self._full = text
+        super().setText(text)
+        self.updateGeometry()
+        self.update()
+
+    def sizeHint(self):  # noqa: N802
+        sh = super().sizeHint()
+        m = self.contentsMargins()
+        sh.setWidth(QFontMetrics(self.font()).horizontalAdvance(self._full) + m.left() + m.right() + 2)
+        return sh
+
+    def minimumSizeHint(self):  # noqa: N802
+        sh = super().minimumSizeHint()
+        sh.setWidth(24)
+        return sh
+
+    def paintEvent(self, event):  # noqa: N802
+        painter = QPainter(self)
+        r = self.contentsRect()
+        elided = QFontMetrics(self.font()).elidedText(self._full, Qt.TextElideMode.ElideRight, r.width())
+        if elided != self._full and not self.toolTip():
+            self.setToolTip(self._full)
+        painter.setPen(self.palette().windowText().color())
+        painter.drawText(r, int(self.alignment()) | int(Qt.AlignmentFlag.AlignVCenter), elided)
+
+
+class ElidedButton(QPushButton):
+    """Button sized to its text that elides the label when space runs out (text() stays complete)."""
+
+    def minimumSizeHint(self):  # noqa: N802
+        sh = super().minimumSizeHint()
+        sh.setWidth(60)
+        return sh
+
+    def paintEvent(self, event):  # noqa: N802
+        painter = QStylePainter(self)
+        opt = QStyleOptionButton()
+        self.initStyleOption(opt)
+        avail = self.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, opt, self).width()
+        opt.text = QFontMetrics(self.font()).elidedText(self.text(), Qt.TextElideMode.ElideRight, max(avail, 10))
+        painter.drawControl(QStyle.ControlElement.CE_PushButton, opt)
 
 
 class PointRowWidget(QFrame):
@@ -58,33 +122,18 @@ class PointRowWidget(QFrame):
         self.init_ui()
 
     def init_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(8)
-
-        # 1. Date and time
-        self.lbl_time = QLabel(f"🕒 {self.point.date_time}")
-        self.lbl_time.setStyleSheet("color: #94a3b8; font-size: 11px; font-family: 'Consolas', monospace; min-width: 105px;")
-        layout.addWidget(self.lbl_time)
-
-        # 2. Sector and keypad
-        self.lbl_sector = QLabel(f"📍 {self.point.sector} ({self.point.keypad})")
-        self.lbl_sector.setStyleSheet("""
-            QLabel {
-                background-color: #0369a1;
-                color: #ffffff;
-                font-size: 11px;
-                font-weight: bold;
-                border-radius: 4px;
-                padding: 2px 6px;
-                min-width: 75px;
-            }
-        """)
-        self.lbl_sector.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.lbl_sector)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 6, 8, 6)
+        outer.setSpacing(4)
+        layout = QHBoxLayout()
+        layout.setSpacing(6)
+        outer.addLayout(layout)
+        meta = QHBoxLayout()
+        meta.setSpacing(8)
+        outer.addLayout(meta)
 
         # 3. Marker type / category picker
-        self.btn_category = QPushButton()
+        self.btn_category = ElidedButton()
         self.btn_category.setFixedHeight(26)
         self.btn_category.setToolTip(tr("points.tip_category"))
         self.btn_category.setStyleSheet("""
@@ -96,7 +145,6 @@ class PointRowWidget(QFrame):
                 font-size: 11px;
                 font-weight: 600;
                 padding: 3px 8px;
-                min-width: 95px;
             }
             QPushButton:hover {
                 background-color: #334155;
@@ -109,7 +157,7 @@ class PointRowWidget(QFrame):
 
         # 4. Map pin color picker
         self.btn_color = QPushButton()
-        self.btn_color.setFixedSize(22, 22)
+        self.btn_color.setFixedSize(20, 20)
         self.btn_color.setToolTip(tr("points.tip_color"))
         self._update_color_button_style()
         self.btn_color.clicked.connect(self._open_color_picker_menu)
@@ -128,7 +176,6 @@ class PointRowWidget(QFrame):
                 font-size: 12px;
                 font-weight: 600;
                 padding: 4px 8px;
-                min-width: 120px;
             }
             QLineEdit:focus {
                 border: 1px solid #38bdf8;
@@ -136,10 +183,29 @@ class PointRowWidget(QFrame):
             }
         """)
         self.txt_name.editingFinished.connect(self._on_name_edited)
-        layout.addWidget(self.txt_name, 2)
+        self.txt_name.setMinimumWidth(40)
+        layout.addWidget(self.txt_name, 1)
+
+        # Line 2: time, sector, coordinates and (base only) players
+        self.lbl_time = ElidedLabel(f"🕒 {self.point.date_time}")
+        self.lbl_time.setStyleSheet("color: #94a3b8; font-size: 11px; font-family: 'Consolas', monospace;")
+        meta.addWidget(self.lbl_time)
+
+        self.lbl_sector = ElidedLabel(f"📍 {self.point.sector} ({self.point.keypad})")
+        self.lbl_sector.setStyleSheet("color: #7dd3fc; font-size: 11px; font-weight: bold;")
+        meta.addWidget(self.lbl_sector)
+
+        coord_preview = f"X={self.point.x:.0f} Y={self.point.y:.0f}"
+        self.lbl_coords = ElidedLabel(coord_preview)
+        self.lbl_coords.setStyleSheet("color: #64748b; font-size: 11px; font-family: 'Consolas', monospace;")
+        self.lbl_coords.setToolTip(self.point.raw_coord)
+        meta.addWidget(self.lbl_coords)
+
+        meta.addStretch(1)
 
         # 6. Inline player nickname editing (base only)
         self.txt_players = QLineEdit(getattr(self.point, "players", ""))
+        self.txt_players.setFixedHeight(22)
         self.txt_players.setPlaceholderText(tr("points.players_placeholder"))
         self.txt_players.setToolTip(tr("points.tip_players"))
         self.txt_players.setStyleSheet("""
@@ -149,8 +215,7 @@ class PointRowWidget(QFrame):
                 border-radius: 4px;
                 color: #e0e7ff;
                 font-size: 11px;
-                padding: 4px 8px;
-                min-width: 140px;
+                padding: 2px 8px;
             }
             QLineEdit:focus {
                 border: 1px solid #a5b4fc;
@@ -160,14 +225,9 @@ class PointRowWidget(QFrame):
         self.txt_players.editingFinished.connect(self._on_players_edited)
         is_base = (getattr(self.point, "category", "default") == "base")
         self.txt_players.setVisible(is_base)
-        layout.addWidget(self.txt_players, 2)
-
-        # 7. Coordinates (compact view)
-        coord_preview = f"X={self.point.x:.0f} Y={self.point.y:.0f}"
-        self.lbl_coords = QLabel(coord_preview)
-        self.lbl_coords.setStyleSheet("color: #64748b; font-size: 11px; font-family: 'Consolas', monospace; min-width: 120px;")
-        self.lbl_coords.setToolTip(self.point.raw_coord)
-        layout.addWidget(self.lbl_coords)
+        self.txt_players.setMinimumWidth(60)
+        self.txt_players.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        meta.addWidget(self.txt_players, 3)
 
         # Shared action button style
         btn_action_style = """
@@ -239,7 +299,7 @@ class PointRowWidget(QFrame):
         cur_cat = getattr(self.point, "category", "default")
         cat_info = get_category_info(cur_cat)
         emoji = cat_info["emoji"]
-        name = cat_info["name"]
+        name = get_category_label(cur_cat)
         self.btn_category.setText(f"{emoji} {name} ▾")
 
     def _open_category_picker_menu(self):
@@ -266,7 +326,7 @@ class PointRowWidget(QFrame):
         cur_cat = getattr(self.point, "category", "default")
         for cid, cdata in POINT_CATEGORIES.items():
             mark = "✓ " if cur_cat == cid else ""
-            act = menu.addAction(f"{mark}{cdata['emoji']} {cdata['name']}")
+            act = menu.addAction(f"{mark}{cdata['emoji']} {get_category_label(cid)}")
             act.triggered.connect(lambda checked=False, c=cid: self._set_category(c))
 
         menu.exec(self.btn_category.mapToGlobal(QPoint(0, self.btn_category.height() + 2)))
@@ -489,20 +549,20 @@ class PointsWindow(QWidget):
         h.setContentsMargins(4, 0, 4, 0)
         h.setSpacing(8)
 
-        self.lbl_title = QLabel(tr("points.window_title_html"))
-        self.lbl_title.setStyleSheet("color: #38bdf8; font-size: 13px;")
+        self.lbl_title = ElidedLabel(_plain(tr("points.window_title_html")))
+        self.lbl_title.setStyleSheet("color: #38bdf8; font-size: 13px; font-weight: bold;")
         h.addWidget(self.lbl_title)
 
         self.lbl_count = QLabel("(0)")
         self.lbl_count.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: bold;")
+        self.lbl_count.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         h.addWidget(self.lbl_count)
-
-        h.addStretch()
 
         # Quick search field
         self.txt_filter = QLineEdit()
         self.txt_filter.setPlaceholderText(tr("points.search_placeholder"))
-        self.txt_filter.setFixedWidth(240)
+        self.txt_filter.setMinimumWidth(120)
+        self.txt_filter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.txt_filter.setFixedHeight(26)
         self.txt_filter.setStyleSheet("""
             QLineEdit {
@@ -518,7 +578,7 @@ class PointsWindow(QWidget):
             }
         """)
         self.txt_filter.textChanged.connect(self._apply_filter)
-        h.addWidget(self.txt_filter)
+        h.addWidget(self.txt_filter, 1)
 
         # Clear button
         btn_clear = QPushButton(tr("points.btn_clear"))
@@ -532,7 +592,7 @@ class PointsWindow(QWidget):
                 color: #e2e8f0;
                 font-size: 11px;
                 font-weight: 600;
-                padding: 2px 8px;
+                padding: 2px 10px;
             }
             QPushButton:hover {
                 background-color: #334155;
@@ -579,7 +639,7 @@ class PointsWindow(QWidget):
         btn.setStyleSheet("""
             QPushButton {
                 background-color: #1e293b; border: 1px solid #334155; border-radius: 4px;
-                color: #e2e8f0; font-size: 11px; font-weight: 600; padding: 2px 8px;
+                color: #e2e8f0; font-size: 11px; font-weight: 600; padding: 2px 10px;
             }
             QPushButton:hover { background-color: #334155; border-color: #38bdf8; }
         """)
@@ -646,11 +706,9 @@ class PointsWindow(QWidget):
         h.setContentsMargins(4, 0, 0, 0)
         h.setSpacing(6)
 
-        lbl_hint = QLabel(tr("points.hint_html"))
+        lbl_hint = ElidedLabel(_plain(tr("points.hint_html")))
         lbl_hint.setStyleSheet("color: #64748b; font-size: 11px;")
-        h.addWidget(lbl_hint)
-
-        h.addStretch()
+        h.addWidget(lbl_hint, 1)
 
         grip = QSizeGrip(self)
         grip.setFixedSize(16, 16)
@@ -719,7 +777,7 @@ class PointsWindow(QWidget):
         for row in self._row_widgets.values():
             pt = row.point
             cur_cat = getattr(pt, "category", "default")
-            cat_name = get_category_info(cur_cat)["name"].lower()
+            cat_name = get_category_label(cur_cat).lower()
             players = getattr(pt, "players", "").lower()
             visible = (
                 not query or
@@ -739,7 +797,7 @@ class PointsWindow(QWidget):
             return
         pt = row.point
         cur_cat = getattr(pt, "category", "default")
-        cat_name = get_category_info(cur_cat)["name"].lower()
+        cat_name = get_category_label(cur_cat).lower()
         players = getattr(pt, "players", "").lower()
         visible = (
             query in pt.name.lower() or
@@ -786,7 +844,7 @@ class PointsWindow(QWidget):
         saved_x = self.cfg.get("points_x", -1)
         saved_y = self.cfg.get("points_y", -1)
 
-        w = max(500, min(w, sw - 40))
+        w = max(self.minimumSizeHint().width(), min(w, sw - 40))
         h = max(160, min(h, sh - 40))
 
         if saved_x is None or saved_x < 0 or saved_y is None or saved_y < 0:

@@ -105,12 +105,12 @@ def test_end_to_end_chat_coordinate_flow(tmp_path):
     # 5. Check category auto-detection in integration flow
     # all_pts[2] was 'машина' -> category 'car'
     assert all_pts[2].category == "car"
-    assert points_win._row_widgets[all_pts[2].id].btn_category.text() == "🚗 Машина ▾"
+    assert points_win._row_widgets[all_pts[2].id].btn_category.text() == "🚗 Car ▾"
     assert points_win._row_widgets[all_pts[2].id].txt_players.isHidden()
 
     # all_pts[1] was 'база' -> category 'base'
     assert all_pts[1].category == "base"
-    assert points_win._row_widgets[all_pts[1].id].btn_category.text() == "🏠 База ▾"
+    assert points_win._row_widgets[all_pts[1].id].btn_category.text() == "🏠 Base ▾"
     assert not points_win._row_widgets[all_pts[1].id].txt_players.isHidden()
 
     # Add players to base

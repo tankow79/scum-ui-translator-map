@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import List
 
 from PyQt6.QtCore import QEvent, QPoint, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor, QImage, QKeyEvent, QPainter, QPen
+from PyQt6.QtGui import QBrush, QColor, QFontMetrics, QImage, QKeyEvent, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSizeGrip,
+    QSizePolicy,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -185,12 +186,14 @@ class ChatOverlay(QWidget):
         hotkey = self.cfg.get("hotkey_toggle_lock", "F9")
         self.title_label = QLabel(tr("overlay.header_title", hotkey=hotkey, lock_text=tr("overlay.lock")))
         self.title_label.setStyleSheet("color: #38bdf8; font-weight: bold; font-size: 11px; border: none; background: transparent;")
-        h.addWidget(self.title_label)
-        h.addStretch()
+        self.title_label.setWordWrap(True)
+        self.title_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.title_label.setMinimumWidth(60)
+        h.addWidget(self.title_label, 1)
 
         # Test button
         self.btn_test = QPushButton(f"🧪 {tr('overlay.test_btn')}")
-        self.btn_test.setFixedHeight(24)
+        self.btn_test.setMinimumHeight(28)
         self.btn_test.setToolTip(tr("tray.test_msg"))
         self.btn_test.setStyleSheet("""
             QPushButton {
@@ -209,7 +212,7 @@ class ChatOverlay(QWidget):
 
         # Clear history
         self.btn_clear = QPushButton("🧹")
-        self.btn_clear.setFixedSize(24, 24)
+        self.btn_clear.setMinimumSize(28, 28)
         self.btn_clear.setToolTip(tr("overlay.clear_history"))
         self.btn_clear.setStyleSheet("""
             QPushButton {
@@ -217,7 +220,9 @@ class ChatOverlay(QWidget):
                 color: #e2e8f0;
                 border: 1px solid #334155;
                 border-radius: 4px;
-                font-size: 11px;
+                font-family: 'Segoe UI Emoji', 'Segoe UI Symbol', 'Segoe UI', sans-serif;
+                font-size: 13px;
+                padding: 0px 4px;
             }
             QPushButton:hover { background-color: #334155; border-color: #38bdf8; }
         """)
@@ -226,7 +231,7 @@ class ChatOverlay(QWidget):
 
         # Map and points (Ctrl+M)
         self.btn_map = QPushButton("🗺")
-        self.btn_map.setFixedSize(24, 24)
+        self.btn_map.setMinimumSize(28, 28)
         map_hotkey = self.cfg.get("hotkey_toggle_map", "Ctrl+M")
         self.btn_map.setToolTip(tr("overlay.open_map", hotkey=map_hotkey))
         self.btn_map.setStyleSheet("""
@@ -235,7 +240,9 @@ class ChatOverlay(QWidget):
                 color: #e2e8f0;
                 border: 1px solid #334155;
                 border-radius: 4px;
-                font-size: 11px;
+                font-family: 'Segoe UI Emoji', 'Segoe UI Symbol', 'Segoe UI', sans-serif;
+                font-size: 13px;
+                padding: 0px 4px;
             }
             QPushButton:hover { background-color: #334155; border-color: #38bdf8; }
         """)
@@ -244,7 +251,7 @@ class ChatOverlay(QWidget):
 
         # Settings
         self.btn_settings = QPushButton("🛠")
-        self.btn_settings.setFixedSize(24, 24)
+        self.btn_settings.setMinimumSize(28, 28)
         self.btn_settings.setToolTip(tr("overlay.open_settings"))
         self.btn_settings.setStyleSheet("""
             QPushButton {
@@ -252,7 +259,9 @@ class ChatOverlay(QWidget):
                 color: #e2e8f0;
                 border: 1px solid #334155;
                 border-radius: 4px;
-                font-size: 11px;
+                font-family: 'Segoe UI Emoji', 'Segoe UI Symbol', 'Segoe UI', sans-serif;
+                font-size: 13px;
+                padding: 0px 4px;
             }
             QPushButton:hover { background-color: #334155; border-color: #38bdf8; }
         """)
@@ -261,7 +270,7 @@ class ChatOverlay(QWidget):
 
         # Lock
         self.btn_lock = QPushButton(tr("overlay.lock"))
-        self.btn_lock.setFixedHeight(24)
+        self.btn_lock.setMinimumHeight(28)
         self.btn_lock.setStyleSheet("""
             QPushButton {
                 background-color: #059669;
@@ -325,7 +334,7 @@ class ChatOverlay(QWidget):
                 font-size: 11px;
                 font-weight: bold;
                 padding: 3px 6px;
-                min-width: 110px;
+                min-height: 20px;
             }
             QComboBox:hover {
                 border-color: #38bdf8;
@@ -354,14 +363,12 @@ class ChatOverlay(QWidget):
         top_row.setSpacing(6)
 
         self.combo_src = QComboBox()
-        self.combo_src.setMaxVisibleItems(20)
-        for name, code in ALL_LANGUAGES:
-            self.combo_src.addItem(name, code)
+        self._setup_lang_combo(self.combo_src)
         self.combo_src.currentIndexChanged.connect(self._on_languages_changed)
-        top_row.addWidget(self.combo_src)
+        top_row.addWidget(self.combo_src, 1)
 
-        self.btn_swap = QPushButton("⇄")
-        self.btn_swap.setFixedSize(24, 24)
+        self.btn_swap = QPushButton("\u21C4")
+        self.btn_swap.setMinimumSize(32, 28)
         self.btn_swap.setToolTip(tr("overlay_ui.swap_languages"))
         self.btn_swap.setStyleSheet("""
             QPushButton {
@@ -369,8 +376,10 @@ class ChatOverlay(QWidget):
                 border: 1px solid #334155;
                 border-radius: 4px;
                 color: #38bdf8;
-                font-size: 13px;
+                font-family: 'Segoe UI Symbol', 'Segoe UI', sans-serif;
+                font-size: 15px;
                 font-weight: bold;
+                padding: 0px 4px;
             }
             QPushButton:hover {
                 background-color: #0284c7;
@@ -382,19 +391,18 @@ class ChatOverlay(QWidget):
         top_row.addWidget(self.btn_swap)
 
         self.combo_tgt = QComboBox()
-        self.combo_tgt.setMaxVisibleItems(20)
-        for name, code in ALL_LANGUAGES:
-            self.combo_tgt.addItem(name, code)
+        self._setup_lang_combo(self.combo_tgt)
         self.combo_tgt.currentIndexChanged.connect(self._on_languages_changed)
-        top_row.addWidget(self.combo_tgt)
+        top_row.addWidget(self.combo_tgt, 1)
 
-        top_row.addStretch()
+        v.addLayout(top_row)
 
         self.lbl_input_hint = QLabel(tr("overlay.hint_input"))
         self.lbl_input_hint.setStyleSheet("color: #94a3b8; font-size: 11px; background: transparent; border: none;")
-        top_row.addWidget(self.lbl_input_hint)
-
-        v.addLayout(top_row)
+        self.lbl_input_hint.setWordWrap(True)
+        self.lbl_input_hint.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.lbl_input_hint.setMinimumHeight(QFontMetrics(self.lbl_input_hint.font()).height() + 2)
+        v.addWidget(self.lbl_input_hint)
 
         # 2. Input field
         self.input_field = QLineEdit()
@@ -436,12 +444,26 @@ class ChatOverlay(QWidget):
             }
             QPushButton:hover { background-color: #10b981; }
         """)
+        self.btn_copy.setMinimumHeight(28)
         self.btn_copy.clicked.connect(self._copy_translation)
         btn_row.addWidget(self.btn_copy)
         v.addLayout(btn_row)
 
         self.main_layout.addWidget(self.input_bar)
         self._sync_combos_from_config()
+
+    @staticmethod
+    def _setup_lang_combo(combo: QComboBox):
+        """Fill a language combo; it sizes to a sane width, elides long names and shows full names in the popup."""
+        combo.setMaxVisibleItems(20)
+        for name, code in ALL_LANGUAGES:
+            combo.addItem(name, code)
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(10)
+        combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        fm = QFontMetrics(combo.font())
+        widest = max((fm.horizontalAdvance(n) for n, _ in ALL_LANGUAGES), default=0)
+        combo.view().setMinimumWidth(widest + 48)
 
     def _build_resize_grip(self):
         """Bottom corner window resize grip."""

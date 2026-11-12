@@ -23,27 +23,17 @@ from PyQt6.QtWidgets import (
 
 from core.chat_history import ChatHistory, HistoryEntry
 from core.i18n import tr
+from ui.theme import DIALOG_QSS
 
 log = logging.getLogger("scum.history_window")
 
 MAX_ROWS = 2000
 
-STYLE = """
-QWidget#history { background-color: #0f172a; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; }
-QLabel { color: #94a3b8; font-size: 12px; }
-QLineEdit, QComboBox { background-color: #0b111c; border: 1px solid #334155; border-radius: 5px;
-                       color: #f8fafc; padding: 4px 8px; min-height: 20px; }
-QLineEdit:focus, QComboBox:focus { border: 1px solid #38bdf8; }
-QComboBox QAbstractItemView { background-color: #0b111c; color: #f8fafc; selection-background-color: #0284c7; }
-QCheckBox { color: #cbd5e1; spacing: 6px; }
-QTableWidget { background-color: #0b111c; alternate-background-color: #0f172a; color: #e2e8f0;
-               gridline-color: #1e293b; border: 1px solid #334155; border-radius: 6px; }
+TABLE_QSS = """
+QTableWidget { background-color: #0b111c; alternate-background-color: #101828; color: #e2e8f0;
+               gridline-color: #1c2840; border: 1px solid #26344d; border-radius: 6px; }
 QTableWidget::item:selected { background-color: #0369a1; }
-QHeaderView::section { background-color: #1e293b; color: #94a3b8; border: none; padding: 5px; font-weight: 600; }
-QPushButton { background-color: #1e293b; color: #cbd5e1; border: 1px solid #334155; border-radius: 6px; padding: 5px 14px; }
-QPushButton:hover { background-color: #334155; color: #ffffff; }
-QPushButton#primary { background-color: #0284c7; border-color: #0ea5e9; color: white; font-weight: 600; }
-QPushButton#danger:hover { background-color: #7f1d1d; border-color: #ef4444; }
+QHeaderView::section { background-color: #16213a; color: #8fa3bf; border: none; padding: 6px; font-weight: 600; }
 """
 
 TYPE_COLORS = {"squad": "#4ade80", "server": "#fbbf24"}
@@ -52,13 +42,14 @@ TYPE_COLORS = {"squad": "#4ade80", "server": "#fbbf24"}
 class HistoryWindow(QWidget):
     def __init__(self, history: ChatHistory, parent=None):
         super().__init__(parent)
-        self.setObjectName("history")
+        self.setObjectName("page")
         self.history = history
         self._shown_revision = -1
         self._rows: List[HistoryEntry] = []
         self.setWindowTitle(tr("history.title"))
+        self.setMinimumSize(560, 320)
         self.resize(900, 520)
-        self.setStyleSheet(STYLE)
+        self.setStyleSheet(DIALOG_QSS + TABLE_QSS)
         self._build_ui()
 
         self._timer = QTimer(self)
@@ -120,11 +111,11 @@ class HistoryWindow(QWidget):
         bottom.addWidget(self.chk_autoscroll)
 
         btn_export = QPushButton(tr("history.export"))
-        btn_export.setObjectName("primary")
+        btn_export.setProperty("role", "primary")
         btn_export.clicked.connect(self._export)
         bottom.addWidget(btn_export)
         btn_clear = QPushButton(tr("history.clear"))
-        btn_clear.setObjectName("danger")
+        btn_clear.setProperty("role", "danger")
         btn_clear.clicked.connect(self._clear)
         bottom.addWidget(btn_clear)
         root.addLayout(bottom)
@@ -159,7 +150,7 @@ class HistoryWindow(QWidget):
         self.table.setUpdatesEnabled(False)
         self.table.setRowCount(len(visible))
         for r, e in enumerate(visible):
-            cells = [e.time_str, e.msg_type, e.sender, e.original, e.translated if e.was_translated else ""]
+            cells = [e.time_str, tr(f"history.type_{e.msg_type}", default=e.msg_type), e.sender, e.original, e.translated if e.was_translated else ""]
             for c, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 color = TYPE_COLORS.get(e.msg_type)
