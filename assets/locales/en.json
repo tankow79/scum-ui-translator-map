@@ -46,11 +46,6 @@
   },
   "settings": {
     "title": "SCUM Chat & Tactical Map Settings",
-    "tab_general": "🌐 General & Language",
-    "tab_hud": "🎨 Appearance & HUD",
-    "tab_keys": "⌨ Hotkeys",
-    "tab_map": "🗺 Map & Coordinates",
-    "tab_update": "🔄 Updates",
     "ui_language": "App Interface Language:",
     "enable_chat": "Enable HUD chat translator and log reader (uncheck for 'Map Only' mode)",
     "autostart": "Launch application on Windows startup",
@@ -61,7 +56,6 @@
     "blacklist_title": "Player Blacklist:",
     "blacklist_placeholder": "Comma-separated nicknames: BadPlayer, Spammer1, TrollBot",
     "blacklist_hint": "Messages from these players are not translated, showing in original language",
-    "blacklist_hint_html": "💡 <i>Messages from blacklisted players will keep their original language without translation.</i>",
     "show_original": "Show original text below translation",
     "ignore_own": "Do not translate own messages (own nickname)",
     "display_mode": "Border / scrollbar style:",
@@ -84,16 +78,13 @@
     "hotkey_map": "🗺 Open Map & Waypoints:",
     "hotkey_reset_all": "🔄 Reset all hotkeys to default (T, F9, F8, Ctrl+M)",
     "hotkey_smart_guard": "💡 <b>Smart Guard:</b> The overlay and chat hotkey only trigger when the SCUM game window is focused and active. If the game is minimized or closed, the overlay is hidden and will not capture keys.",
-    "map_sec_title": "🗺 <b>Interactive Map Settings</b>",
     "map_style": "Map style:",
     "map_grid": "Display main sector grid (D0..Z4)",
     "map_keypads": "Display detailed keypad grid (k1..k9) when zoomed in",
     "map_ontop": "Keep map and list windows on top of game (Always On Top)",
-    "map_sec_points": "📍 <b>Automatic Coordinate Collection from Chat</b>",
     "map_auto_focus": "Automatically focus map on new chat coordinate",
     "map_reset_geo": "🔄 Reset map and waypoints window positions and size",
-    "update_title": "SCUM Chat Translator & Tactical Map",
-    "update_current_ver": "Current version: <span style='color: #22c55e; font-weight: bold;'>v{version}</span>",
+    "update_current_ver": "Current version: v{version}",
     "update_autocheck": "Automatically check for updates on startup",
     "update_guarantee": "🛡️ <b>Data Safety Guarantee:</b> Program updates never overwrite your settings (config.json) or saved waypoints (points.json).",
     "update_check_btn": "🔍 Check for Updates",
@@ -106,10 +97,6 @@
     "cancel_btn": "Cancel",
     "clear_bind": "— Not assigned —",
     "press_key": "Press key...",
-    "tab_filters": "🛡 Filters & History",
-    "tab_profiles": "🎛 Profiles",
-    "tab_language": "🌐 Language",
-    "language_title": "Interface language",
     "language_hint": "Pick the language of menus and windows. To add a language, copy assets/locales/en.json to <code>.json, translate the values and restart the app; it will appear here automatically. Reopen this window after saving to refresh its texts.",
     "language_open_folder": "Open languages folder",
     "words_group": "Blocked words",
@@ -146,7 +133,22 @@
     "hotkey_clear_tip": "Reset / clear hotkey",
     "map_variant_regular": "🛰 Satellite (Regular)",
     "map_variant_tactical": "🎯 Tactical (Contour)",
-    "log_dialog_title": "Select SCUM.log file"
+    "log_dialog_title": "Select SCUM.log file",
+    "nav_general": "General",
+    "nav_chat": "Chat",
+    "nav_appearance": "Appearance",
+    "nav_hotkeys": "Hotkeys",
+    "nav_profiles": "Profiles",
+    "sec_language": "Language",
+    "sec_startup": "Startup & mode",
+    "sec_game": "Game",
+    "sec_updates": "Updates",
+    "sec_translation": "Translation",
+    "sec_players": "Players",
+    "sec_overlay": "Chat overlay",
+    "sec_map": "Map & waypoints",
+    "sec_hotkeys": "Keyboard shortcuts",
+    "update_interval": "Check for updates every (hours, 0 = only at startup):"
   },
   "map": {
     "title": "SCUM Interactive Tactical Map",
@@ -285,10 +287,14 @@
     "tip_reset": "Fit the whole map",
     "tip_close": "Close (Ctrl+M)",
     "hint": "💡 <b>Wheel</b>: zoom | <b>Drag</b>: pan | <b>Click marker</b>: select",
-    "cursor_info": "📍 <b>{sector}</b> ({keypad}) | X={x} Y={y}"
+    "cursor_info": "📍 <b>{sector}</b> ({keypad}) | X={x} Y={y}",
+    "title": "SCUM Island Map",
+    "tip_zoom_in": "Zoom in",
+    "tip_zoom_out": "Zoom out"
   },
   "overlay_ui": {
-    "swap_languages": "Swap languages"
+    "swap_languages": "Swap languages",
+    "close": "Close"
   },
   "colors": {
     "pick_pin_color": "Choose pin color"
@@ -302,5 +308,14 @@
     "hint_html": "💡 <b>Enter</b> — copy | <b>Esc</b> — close | <i>Drag the window with the mouse</i>",
     "copy_btn": "📋 Copy (Enter)",
     "copied_html": "✅ <b>Copied! Press Ctrl+V in the game.</b>"
+  },
+  "categories": {
+    "default": "Waypoint",
+    "base": "Base",
+    "car": "Car",
+    "plane": "Plane",
+    "moto": "Motorcycle",
+    "boat": "Boat",
+    "cache": "Cache"
   }
 }

@@ -167,7 +167,8 @@ def test_apply_update_swaps_executable_and_keeps_old_copy(tmp_path):
     assert target.read_bytes().startswith(b"MZNEW")
     assert (tmp_path / "SCUM_Chat_Translator.exe.old").read_bytes().startswith(b"MZOLD")
     assert json.loads((tmp_path / "config.json").read_text())["own_nickname"] == "Hero"
-    assert (tmp_path / "config.json.bak").exists()
+    backup = next((tmp_path / ".update_backup").glob("backup_*/config.json"))
+    assert json.loads(backup.read_text())["own_nickname"] == "Hero"
 
 
 def test_apply_update_rolls_back_when_swap_fails(tmp_path, monkeypatch):
@@ -245,13 +246,72 @@ def test_safe_extract_zip_blocks_path_traversal(tmp_path):
     assert not (tmp_path / "evil.txt").exists()
 
 
-def test_backup_user_data(tmp_path):
+def test_backup_user_data_is_verified_and_keeps_only_the_newest(tmp_path):
     (tmp_path / "config.json").write_text("{}")
     (tmp_path / "profiles.json").write_text("{}")
+    old = tmp_path / ".update_backup" / "backup_1"
+    old.mkdir(parents=True)
+    (old / "config.json").write_text("{}")
+
     backups = UpdateInstaller.backup_user_data(str(tmp_path))
+
     assert set(backups) == {"config.json", "profiles.json"}
-    assert (tmp_path / "config.json.bak").exists()
-    assert (tmp_path / ".update_backup").is_dir()
+    assert not old.exists()
+    assert not list(tmp_path.glob("*.bak"))          # no clutter next to the user files
+    assert len(list((tmp_path / ".update_backup").iterdir())) == 1
+
+
+def test_backup_failure_cancels_the_update_before_touching_the_exe(tmp_path, monkeypatch):
+    target = tmp_path / "app.exe"
+    target.write_bytes(fake_exe(b"OLD"))
+    new = tmp_path / "new.exe"
+    new.write_bytes(fake_exe(b"NEW"))
+    (tmp_path / "config.json").write_text('{"a": 1}')
+    monkeypatch.setattr(updater.shutil, "copy2", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(UpdateError):
+        UpdateInstaller.apply_update(str(new), target_exe=str(target))
+    assert target.read_bytes().startswith(b"MZOLD")
+
+
+def test_remove_backups_after_healthy_start(tmp_path):
+    (tmp_path / "config.json").write_text('{"a": 1}')
+    (tmp_path / "points.json").write_text("[]")
+    UpdateInstaller.backup_user_data(str(tmp_path))
+    (tmp_path / "config.json.bak").write_text("{}")         # legacy leftover of the old updater
+    assert UpdateInstaller.remove_backups(str(tmp_path)) is True
+    assert not (tmp_path / ".update_backup").exists() and not (tmp_path / "config.json.bak").exists()
+    assert json.loads((tmp_path / "config.json").read_text()) == {"a": 1}   # user data untouched
+    assert (tmp_path / "points.json").read_text() == "[]"
+
+
+def test_backups_are_kept_when_a_user_file_is_missing(tmp_path):
+    (tmp_path / "config.json").write_text('{"a": 1}')
+    UpdateInstaller.backup_user_data(str(tmp_path))
+    (tmp_path / "config.json").unlink()
+    assert UpdateInstaller.remove_backups(str(tmp_path)) is False
+    assert (tmp_path / ".update_backup").exists()
+
+
+def test_restore_damaged_user_data_at_startup(tmp_path):
+    (tmp_path / "config.json").write_text('{"nick": "Hero"}')
+    (tmp_path / "points.json").write_text('[{"id": "a"}]')
+    (tmp_path / "profiles.json").write_text('{"active": "Default"}')
+    UpdateInstaller.backup_user_data(str(tmp_path))
+    (tmp_path / "config.json").unlink()                       # vanished
+    (tmp_path / "points.json").write_text("{corrupt")         # damaged
+    restored = UpdateInstaller.restore_damaged_user_data(str(tmp_path))
+    assert set(restored) == {"config.json", "points.json"}
+    assert json.loads((tmp_path / "config.json").read_text()) == {"nick": "Hero"}
+    assert json.loads((tmp_path / "points.json").read_text()) == [{"id": "a"}]
+    assert (tmp_path / "profiles.json").read_text() == '{"active": "Default"}'
+
+
+def test_healthy_user_files_are_never_overwritten_by_restore(tmp_path):
+    (tmp_path / "config.json").write_text('{"v": 1}')
+    UpdateInstaller.backup_user_data(str(tmp_path))
+    (tmp_path / "config.json").write_text('{"v": 2}')         # user changed settings after the backup
+    assert UpdateInstaller.restore_damaged_user_data(str(tmp_path)) == []
+    assert json.loads((tmp_path / "config.json").read_text()) == {"v": 2}
 
 
 # ───────────── UI ─────────────

@@ -421,7 +421,7 @@ def test_settings_language_tab_lists_installed_locales_and_saves_choice(qapp, tm
     assert LocalizationManager.get_instance().current_locale == "en"
     assert tr("settings.save_btn") == "💾 Save Settings"
 
-    codes = [dlg.tab_language.list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(dlg.tab_language.list.count())]
+    codes = [dlg.tab_language.combo.itemData(i) for i in range(dlg.tab_language.combo.count())]
     assert "en" in codes
     assert dlg.tab_language.selected_code() == "en"
 

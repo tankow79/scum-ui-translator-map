@@ -5,7 +5,6 @@ import webbrowser
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -13,11 +12,12 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
-    QSlider,
-    QTabWidget,
+    QSpinBox,
+    QStackedWidget,
     QVBoxLayout,
-    QWidget,
 )
 
 from core.config_manager import ConfigManager
@@ -25,7 +25,16 @@ from core.i18n import LocalizationManager, tr
 from core.languages import ALL_LANGUAGES
 from core.updater import UpdateChecker
 from core.version import GITHUB_REPO_URL, __version__
-from ui.settings_extra_tabs import EXTRA_STYLE, FiltersTab, LanguageTab, ProfilesTab
+from ui.flow_layout import button_row
+from ui.settings_extra_tabs import (
+    AutoDetectSection,
+    HistorySection,
+    LanguageSelector,
+    ProfilesTab,
+    WordFilterSection,
+)
+from ui.settings_widgets import Section, SettingsPage, SliderRow, WrapCheck, make_button, muted_label
+from ui.theme import DIALOG_QSS
 from ui.update_dialog import UpdateDialog
 
 log = logging.getLogger("scum.settings")
@@ -42,8 +51,8 @@ class HotkeyButton(QPushButton):
         super().__init__(parent)
         self.current_hotkey = current_hotkey or ""
         self.is_recording = False
-        self.setFixedWidth(140)
-        self.setFixedHeight(30)
+        self.setMinimumWidth(140)
+        self.setMinimumHeight(30)
         self.set_hotkey(self.current_hotkey)
         self.clicked.connect(self.start_recording)
 
@@ -183,439 +192,238 @@ class HotkeyButton(QPushButton):
 
 
 class SettingsDialog(QDialog):
+    """Settings with a left navigation list (scales to long translations) and scrolling pages."""
     settings_changed = pyqtSignal()
+
+    NAV_MAX_WIDTH = 230
 
     def __init__(self, config_manager: ConfigManager, parent=None, profiles=None):
         super().__init__(parent)
         self.cfg = config_manager
         self.profiles = profiles
-        ui_lang = self.cfg.get("ui_language", "en")
-        LocalizationManager.get_instance().set_locale(ui_lang)
+        LocalizationManager.get_instance().set_locale(self.cfg.get("ui_language", "en"))
         self.setWindowTitle(tr("settings.title"))
-        self.setMinimumWidth(640)
-        self.resize(680, 540)
-
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #0f172a;
-                color: #f8fafc;
-                font-family: 'Segoe UI', -apple-system, sans-serif;
-            }
-            QLabel {
-                color: #e2e8f0;
-                font-size: 12px;
-            }
-            QTabWidget::pane {
-                border: 1px solid #334155;
-                background-color: #1e293b;
-                border-radius: 8px;
-                top: -1px;
-                padding: 12px;
-            }
-            QTabBar::tab {
-                background-color: #0f172a;
-                color: #94a3b8;
-                border: 1px solid #334155;
-                border-bottom: none;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
-                padding: 8px 13px;
-                font-weight: 600;
-                font-size: 12px;
-                margin-right: 3px;
-            }
-            QTabBar::tab:selected {
-                background-color: #1e293b;
-                color: #38bdf8;
-                border-color: #334155;
-            }
-            QTabBar::tab:hover:!selected {
-                color: #f1f5f9;
-                background-color: #1a2234;
-            }
-            QLineEdit, QComboBox {
-                background-color: #0f172a;
-                border: 1px solid #334155;
-                border-radius: 5px;
-                color: #f8fafc;
-                padding: 5px 8px;
-                font-size: 12px;
-                min-height: 20px;
-            }
-            QLineEdit:focus, QComboBox:focus {
-                border: 1px solid #38bdf8;
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 20px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #0f172a;
-                color: #f8fafc;
-                border: 1px solid #38bdf8;
-                selection-background-color: #0284c7;
-                selection-color: #ffffff;
-                padding: 4px;
-            }
-            QCheckBox {
-                color: #e2e8f0;
-                font-size: 12px;
-                spacing: 8px;
-            }
-            QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
-                border-radius: 4px;
-                border: 1px solid #475569;
-                background-color: #0f172a;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #38bdf8;
-                border-color: #38bdf8;
-            }
-            QSlider::groove:horizontal {
-                height: 6px;
-                background: #0f172a;
-                border: 1px solid #334155;
-                border-radius: 3px;
-            }
-            QSlider::sub-page:horizontal {
-                background: #0284c7;
-                border-radius: 3px;
-            }
-            QSlider::handle:horizontal {
-                background: #38bdf8;
-                width: 16px;
-                margin-top: -5px;
-                margin-bottom: -5px;
-                border-radius: 8px;
-            }
-            QSlider::handle:horizontal:hover {
-                background: #7dd3fc;
-            }
-        """ + EXTRA_STYLE)
+        self.setMinimumSize(660, 460)
+        self.resize(820, 600)
+        self.setStyleSheet(DIALOG_QSS)
 
         self.init_ui()
         self.load_settings()
 
+    # ── construction ─────────────────────────────────────────────────
     def init_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(14, 14, 14, 14)
-        main_layout.setSpacing(12)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        self.tabs = QTabWidget(self)
-        self.tabs.setUsesScrollButtons(False)
-        self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
+        body = QHBoxLayout()
+        body.setSpacing(0)
+        self.nav = QListWidget()
+        self.nav.setObjectName("nav")
+        self.nav.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.stack = QStackedWidget()
+        body.addWidget(self.nav, 0)
+        body.addWidget(self.stack, 1)
+        root.addLayout(body, 1)
 
-        # ────────── TAB 1: General settings ──────────
-        tab_general = QWidget()
-        v_general = QVBoxLayout(tab_general)
-        v_general.setContentsMargins(8, 12, 8, 12)
-        v_general.setSpacing(12)
+        pages = [
+            (tr("settings.nav_general"), self._build_general_page()),
+            (tr("settings.nav_chat"), self._build_chat_page()),
+            (tr("settings.nav_appearance"), self._build_appearance_page()),
+            (tr("settings.nav_hotkeys"), self._build_hotkeys_page()),
+            (tr("settings.nav_profiles"), self._build_profiles_page()),
+        ]
+        for title, page in pages:
+            item = QListWidgetItem(title)
+            item.setToolTip(title)
+            self.nav.addItem(item)
+            self.stack.addWidget(page)
+        fm = self.nav.fontMetrics()
+        widest = max(fm.horizontalAdvance(title) for title, _ in pages)
+        self.nav.setFixedWidth(min(self.NAV_MAX_WIDTH, max(150, widest + 56)))
+        self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
+        self.nav.setCurrentRow(0)
 
-        # 0.2 "Map Only" mode
-        self.chk_enable_chat = QCheckBox(tr("settings.enable_chat"))
-        v_general.addWidget(self.chk_enable_chat)
+        # Footer
+        footer = QFrame()
+        footer.setObjectName("footer")
+        footer.setStyleSheet("QFrame#footer { background-color: #111a2b; border-top: 1px solid #26344d; }")
+        fl = QHBoxLayout(footer)
+        fl.setContentsMargins(18, 10, 18, 10)
+        fl.setSpacing(10)
+        self.lbl_version = QLabel(f"v{__version__}")
+        self.lbl_version.setProperty("role", "muted")
+        fl.addWidget(self.lbl_version)
+        fl.addStretch(1)
+        self.btn_cancel = make_button(tr("settings.cancel_btn"))
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_save = make_button(tr("settings.save_btn"), "primary")
+        self.btn_save.clicked.connect(self.save_settings)
+        fl.addWidget(self.btn_cancel)
+        fl.addWidget(self.btn_save)
+        root.addWidget(footer)
 
-        # 0.3 Windows autostart
-        self.chk_autostart = QCheckBox(tr("settings.autostart"))
-        v_general.addWidget(self.chk_autostart)
+    def _row(self, *widgets, stretch_last: bool = False) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        for w in widgets:
+            row.addWidget(w)
+        if stretch_last:
+            row.addStretch(1)
+        return row
 
-        # Separator
-        line0 = QFrame()
-        line0.setFrameShape(QFrame.Shape.HLine)
-        line0.setStyleSheet("border: none; border-top: 1px solid #334155; margin: 4px 0;")
-        v_general.addWidget(line0)
+    # ── pages ────────────────────────────────────────────────────────
+    def _build_general_page(self) -> SettingsPage:
+        page = SettingsPage()
 
-        # 1. SCUM log path
-        r_log = QHBoxLayout()
-        lbl_log = QLabel(tr("settings.log_file"))
-        lbl_log.setFixedWidth(170)
+        self.tab_language = LanguageSelector()
+        page.add_section(self.tab_language)
+
+        s = Section(tr("settings.sec_startup"))
+        self.chk_enable_chat = s.add_check(WrapCheck(tr("settings.enable_chat")))
+        self.chk_autostart = s.add_check(WrapCheck(tr("settings.autostart")))
+        page.add_section(s)
+
+        s = Section(tr("settings.sec_game"))
         self.txt_log_path = QLineEdit()
-        self.btn_browse = QPushButton(tr("settings.browse_btn"))
-        self.btn_browse.setFixedHeight(28)
-        self.btn_browse.setStyleSheet("""
-            QPushButton {
-                background-color: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 5px;
-                color: #38bdf8;
-                font-weight: 600;
-                padding: 4px 12px;
-            }
-            QPushButton:hover { background-color: #334155; border-color: #38bdf8; }
-        """)
+        self.btn_browse = make_button(tr("settings.browse_btn"))
         self.btn_browse.clicked.connect(self.browse_log_file)
-        r_log.addWidget(lbl_log)
-        r_log.addWidget(self.txt_log_path)
-        r_log.addWidget(self.btn_browse)
-        v_general.addLayout(r_log)
+        box = QVBoxLayout()
+        box.setSpacing(4)
+        lbl = QLabel(tr("settings.log_file"))
+        lbl.setWordWrap(True)
+        box.addWidget(lbl)
+        box.addLayout(self._row(self.txt_log_path, self.btn_browse))
+        s.add_layout(box)
+        self.txt_log_path.setMinimumWidth(120)
+        self.txt_nickname = QLineEdit()
+        self.txt_nickname.setPlaceholderText("Survivor")
+        s.add_field(tr("settings.own_nickname"), self.txt_nickname)
+        page.add_section(s)
 
-        # 2. Chat language
-        r_lang = QHBoxLayout()
-        lbl_lang = QLabel(tr("settings.target_lang"))
-        lbl_lang.setFixedWidth(170)
+        s = Section(tr("settings.sec_updates"))
+        self.chk_auto_update = s.add_check(WrapCheck(tr("settings.update_autocheck")))
+        self.spin_update_hours = QSpinBox()
+        self.spin_update_hours.setRange(0, 168)
+        self.spin_update_hours.setMaximumWidth(110)
+        s.add_field(tr("settings.update_interval"), self.spin_update_hours)
+        self.btn_check_update = make_button(tr("settings.update_check_btn"), "primary")
+        self.btn_check_update.clicked.connect(self._manual_check_updates)
+        btn_repo = make_button(tr("settings.update_github_btn"))
+        btn_repo.clicked.connect(lambda: webbrowser.open(GITHUB_REPO_URL))
+        s.add_layout(button_row(self.btn_check_update, btn_repo))
+        self.lbl_update_status = QLabel(tr("settings.update_current_ver", version=__version__))
+        self.lbl_update_status.setWordWrap(True)
+        self.lbl_update_status.setProperty("role", "muted")
+        s.add_widget(self.lbl_update_status)
+        s.add_widget(muted_label(tr("settings.update_guarantee")))
+        page.add_section(s)
+
+        page.finish()
+        return page
+
+    def _build_chat_page(self) -> SettingsPage:
+        page = SettingsPage()
+
+        s = Section(tr("settings.sec_translation"))
         self.combo_in_lang = QComboBox()
         self.combo_in_lang.setMaxVisibleItems(20)
         for name, code in ALL_LANGUAGES:
             self.combo_in_lang.addItem(name, code)
-        r_lang.addWidget(lbl_lang)
-        r_lang.addWidget(self.combo_in_lang)
-        v_general.addLayout(r_lang)
+        s.add_field(tr("settings.target_lang"), self.combo_in_lang)
+        self.chk_show_orig = s.add_check(WrapCheck(tr("settings.show_original")))
+        self.chk_ignore_own = s.add_check(WrapCheck(tr("settings.ignore_own")))
+        page.add_section(s)
 
-        # 3. Player nickname
-        r_nick = QHBoxLayout()
-        lbl_nick = QLabel(tr("settings.own_nickname"))
-        lbl_nick.setFixedWidth(170)
-        self.txt_nickname = QLineEdit()
-        self.txt_nickname.setPlaceholderText("Survivor")
-        r_nick.addWidget(lbl_nick)
-        r_nick.addWidget(self.txt_nickname)
-        v_general.addLayout(r_nick)
-
-        # 4. Nickname blacklist
-        r_bl = QHBoxLayout()
-        lbl_bl = QLabel(tr("settings.blacklist_title"))
-        lbl_bl.setFixedWidth(170)
+        s = Section(tr("settings.sec_players"))
         self.txt_blacklist = QLineEdit()
         self.txt_blacklist.setPlaceholderText(tr("settings.blacklist_placeholder"))
-        self.txt_blacklist.setToolTip(tr("settings.blacklist_hint"))
-        r_bl.addWidget(lbl_bl)
-        r_bl.addWidget(self.txt_blacklist)
-        v_general.addLayout(r_bl)
+        s.add_field(tr("settings.blacklist_title"), self.txt_blacklist, tr("settings.blacklist_hint"))
+        page.add_section(s)
 
-        lbl_bl_hint = QLabel(tr("settings.blacklist_hint_html"))
-        lbl_bl_hint.setStyleSheet("color: #94a3b8; font-size: 11px; margin-left: 175px;")
-        v_general.addWidget(lbl_bl_hint)
+        self.section_words = page.add_section(WordFilterSection())
+        self.section_detect = page.add_section(AutoDetectSection())
+        self.section_history = page.add_section(HistorySection())
+        page.finish()
+        return page
 
-        # Separator
-        line1 = QFrame()
-        line1.setFrameShape(QFrame.Shape.HLine)
-        line1.setStyleSheet("border: none; border-top: 1px solid #334155;")
-        v_general.addWidget(line1)
+    def _build_appearance_page(self) -> SettingsPage:
+        page = SettingsPage()
 
-        # 4. Checkboxes
-        self.chk_show_orig = QCheckBox(tr("settings.show_original"))
-        v_general.addWidget(self.chk_show_orig)
-
-        self.chk_ignore_own = QCheckBox(tr("settings.ignore_own"))
-        v_general.addWidget(self.chk_ignore_own)
-
-        v_general.addStretch()
-        self.tabs.addTab(tab_general, tr("settings.tab_general"))
-
-        # ────────── TAB 2: Appearance & HUD ──────────
-        tab_hud = QWidget()
-        v_hud = QVBoxLayout(tab_hud)
-        v_hud.setContentsMargins(8, 12, 8, 12)
-        v_hud.setSpacing(10)
-
-        # 1. Border and scrollbar style
-        r_mode = QHBoxLayout()
-        lbl_mode = QLabel(tr("settings.display_mode"))
-        lbl_mode.setFixedWidth(170)
+        s = Section(tr("settings.sec_overlay"))
         self.combo_display_mode = QComboBox()
         self.combo_display_mode.addItem(tr("settings.display_mode_none"), "none")
         self.combo_display_mode.addItem(tr("settings.display_mode_border"), "border_only")
         self.combo_display_mode.addItem(tr("settings.display_mode_scrollbar"), "scrollbar_only")
         self.combo_display_mode.addItem(tr("settings.display_mode_both"), "both")
-        r_mode.addWidget(lbl_mode)
-        r_mode.addWidget(self.combo_display_mode)
-        v_hud.addLayout(r_mode)
+        s.add_field(tr("settings.display_mode"), self.combo_display_mode)
 
-        # Shared style for value info badges
-        badge_style = """
-            QLabel {
-                background-color: #0f172a;
-                border: 1px solid #334155;
-                border-radius: 4px;
-                color: #38bdf8;
-                font-weight: 600;
-                font-size: 11px;
-                padding: 3px;
-            }
-        """
-
-        # 2. Display time (fade)
-        r_fade = QHBoxLayout()
-        lbl_fade = QLabel(tr("settings.fade_time"))
-        lbl_fade.setFixedWidth(170)
-        self.slider_fade = QSlider(Qt.Orientation.Horizontal)
-        self.slider_fade.setRange(0, 60)
-        self.badge_fade = QLabel(tr("settings.fade_seconds", seconds=10))
-        self.badge_fade.setFixedWidth(90)
-        self.badge_fade.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.badge_fade.setStyleSheet(badge_style)
+        row = SliderRow(tr("settings.fade_time"), 0, 60, tr("settings.fade_always"))
+        self.slider_fade, self.badge_fade = row.slider, row.value_label
         self.slider_fade.valueChanged.connect(self._on_fade_slider_changed)
-        r_fade.addWidget(lbl_fade)
-        r_fade.addWidget(self.slider_fade)
-        r_fade.addWidget(self.badge_fade)
-        v_hud.addLayout(r_fade)
+        s.add_widget(row)
 
-        # 3. Background opacity
-        r_op = QHBoxLayout()
-        lbl_op = QLabel(tr("settings.opacity"))
-        lbl_op.setFixedWidth(170)
-        self.slider_opacity = QSlider(Qt.Orientation.Horizontal)
-        self.slider_opacity.setRange(0, 100)
-        self.badge_opacity = QLabel("50%")
-        self.badge_opacity.setFixedWidth(90)
-        self.badge_opacity.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.badge_opacity.setStyleSheet(badge_style)
+        row = SliderRow(tr("settings.opacity"), 0, 100, "100%")
+        self.slider_opacity, self.badge_opacity = row.slider, row.value_label
         self.slider_opacity.valueChanged.connect(lambda v: self.badge_opacity.setText(f"{v}%"))
-        r_op.addWidget(lbl_op)
-        r_op.addWidget(self.slider_opacity)
-        r_op.addWidget(self.badge_opacity)
-        v_hud.addLayout(r_op)
+        s.add_widget(row)
 
-        # 4. Font size
-        r_font = QHBoxLayout()
-        lbl_font = QLabel(tr("settings.font_size"))
-        lbl_font.setFixedWidth(170)
-        self.slider_font = QSlider(Qt.Orientation.Horizontal)
-        self.slider_font.setRange(10, 24)
-        self.badge_font = QLabel("13 px")
-        self.badge_font.setFixedWidth(90)
-        self.badge_font.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.badge_font.setStyleSheet(badge_style)
+        row = SliderRow(tr("settings.font_size"), 10, 24, "24 px")
+        self.slider_font, self.badge_font = row.slider, row.value_label
         self.slider_font.valueChanged.connect(lambda v: self.badge_font.setText(f"{v} px"))
-        r_font.addWidget(lbl_font)
-        r_font.addWidget(self.slider_font)
-        r_font.addWidget(self.badge_font)
-        v_hud.addLayout(r_font)
+        s.add_widget(row)
 
-        # 5. Number of lines
-        r_msgs = QHBoxLayout()
-        lbl_msgs = QLabel(tr("settings.max_messages"))
-        lbl_msgs.setFixedWidth(170)
-        self.slider_msgs = QSlider(Qt.Orientation.Horizontal)
-        self.slider_msgs.setRange(5, 40)
-        self.badge_msgs = QLabel(tr("settings.msgs_count", count=20))
-        self.badge_msgs.setFixedWidth(90)
-        self.badge_msgs.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.badge_msgs.setStyleSheet(badge_style)
+        row = SliderRow(tr("settings.max_messages"), 5, 40, tr("settings.msgs_count", count=40))
+        self.slider_msgs, self.badge_msgs = row.slider, row.value_label
         self.slider_msgs.valueChanged.connect(lambda v: self.badge_msgs.setText(tr("settings.msgs_count", count=v)))
-        r_msgs.addWidget(lbl_msgs)
-        r_msgs.addWidget(self.slider_msgs)
-        r_msgs.addWidget(self.badge_msgs)
-        v_hud.addLayout(r_msgs)
+        s.add_widget(row)
 
-        # 6. Bold font
-        self.chk_font_bold = QCheckBox(tr("settings.font_bold"))
-        v_hud.addWidget(self.chk_font_bold)
+        self.chk_font_bold = s.add_check(WrapCheck(tr("settings.font_bold")))
+        self.chk_text_outline = s.add_check(WrapCheck(tr("settings.text_outline")))
+        page.add_section(s)
 
-        # 7. Black text outline
-        self.chk_text_outline = QCheckBox(tr("settings.text_outline"))
-        v_hud.addWidget(self.chk_text_outline)
+        s = Section(tr("settings.sec_map"))
+        self.combo_map_variant = QComboBox()
+        self.combo_map_variant.addItem(tr("settings.map_variant_regular"), "regular")
+        self.combo_map_variant.addItem(tr("settings.map_variant_tactical"), "tactical")
+        s.add_field(tr("settings.map_style"), self.combo_map_variant)
+        self.chk_map_grid = s.add_check(WrapCheck(tr("settings.map_grid")))
+        self.chk_map_keypads = s.add_check(WrapCheck(tr("settings.map_keypads")))
+        self.chk_map_ontop = s.add_check(WrapCheck(tr("settings.map_ontop")))
+        self.chk_auto_focus = s.add_check(WrapCheck(tr("settings.map_auto_focus")))
+        btn_reset_geo = make_button(tr("settings.map_reset_geo"))
+        btn_reset_geo.clicked.connect(self._reset_map_windows_geometry)
+        s.add_layout(button_row(btn_reset_geo))
+        page.add_section(s)
 
-        v_hud.addStretch()
-        self.tabs.addTab(tab_hud, tr("settings.tab_hud"))
+        page.finish()
+        return page
 
-        # ────────── TAB 3: Hotkeys ──────────
-        tab_keys = QWidget()
-        v_keys = QVBoxLayout(tab_keys)
-        v_keys.setContentsMargins(8, 14, 8, 14)
-        v_keys.setSpacing(12)
+    def _build_hotkeys_page(self) -> SettingsPage:
+        page = SettingsPage()
+        s = Section(tr("settings.sec_hotkeys"))
 
-        btn_clr_style = """
-            QPushButton {
-                background-color: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 4px;
-                color: #f87171;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #ef4444;
-                border-color: #f87171;
-                color: white;
-            }
-        """
+        def hotkey_row(label: str, key: str, default: str):
+            button = HotkeyButton(self.cfg.get(key, default))
+            clear = make_button("✕", "icon", tr("settings.hotkey_clear_tip"))
+            clear.clicked.connect(button.clear_hotkey)
+            box = QVBoxLayout()
+            box.setSpacing(4)
+            lbl = QLabel(label)
+            lbl.setWordWrap(True)
+            box.addWidget(lbl)
+            box.addLayout(self._row(button, clear, stretch_last=True))
+            s.add_layout(box)
+            return button
 
-        # Chat key
-        r_k_chat = QHBoxLayout()
-        lbl_k_chat = QLabel(tr("settings.hotkey_chat"))
-        lbl_k_chat.setFixedWidth(200)
-        self.btn_k_chat = HotkeyButton(self.cfg.get("hotkey_quick_chat", "T"))
-        btn_clr_chat = QPushButton("❌")
-        btn_clr_chat.setFixedSize(28, 28)
-        btn_clr_chat.setStyleSheet(btn_clr_style)
-        btn_clr_chat.setToolTip(tr("settings.hotkey_clear_tip"))
-        btn_clr_chat.clicked.connect(self.btn_k_chat.clear_hotkey)
-        r_k_chat.addWidget(lbl_k_chat)
-        r_k_chat.addWidget(self.btn_k_chat)
-        r_k_chat.addWidget(btn_clr_chat)
-        r_k_chat.addStretch()
-        v_keys.addLayout(r_k_chat)
+        self.btn_k_chat = hotkey_row(tr("settings.hotkey_chat"), "hotkey_quick_chat", "T")
+        self.btn_k_lock = hotkey_row(tr("settings.hotkey_lock", hotkey="F9"), "hotkey_toggle_lock", "F9")
+        self.btn_k_vis = hotkey_row(tr("settings.hotkey_vis", hotkey="F8"), "hotkey_toggle_visibility", "F8")
+        self.btn_k_map = hotkey_row(tr("settings.hotkey_map"), "hotkey_toggle_map", "Ctrl+M")
 
-        # F9 lock
-        r_k_lock = QHBoxLayout()
-        lbl_k_lock = QLabel(tr("settings.hotkey_lock", hotkey="F9"))
-        lbl_k_lock.setFixedWidth(200)
-        self.btn_k_lock = HotkeyButton(self.cfg.get("hotkey_toggle_lock", "F9"))
-        btn_clr_lock = QPushButton("❌")
-        btn_clr_lock.setFixedSize(28, 28)
-        btn_clr_lock.setStyleSheet(btn_clr_style)
-        btn_clr_lock.setToolTip(tr("settings.hotkey_clear_tip"))
-        btn_clr_lock.clicked.connect(self.btn_k_lock.clear_hotkey)
-        r_k_lock.addWidget(lbl_k_lock)
-        r_k_lock.addWidget(self.btn_k_lock)
-        r_k_lock.addWidget(btn_clr_lock)
-        r_k_lock.addStretch()
-        v_keys.addLayout(r_k_lock)
+        btn_reset_all = make_button(tr("settings.hotkey_reset_all"))
 
-        # F8 visibility
-        r_k_vis = QHBoxLayout()
-        lbl_k_vis = QLabel(tr("settings.hotkey_vis", hotkey="F8"))
-        lbl_k_vis.setFixedWidth(200)
-        self.btn_k_vis = HotkeyButton(self.cfg.get("hotkey_toggle_visibility", "F8"))
-        btn_clr_vis = QPushButton("❌")
-        btn_clr_vis.setFixedSize(28, 28)
-        btn_clr_vis.setStyleSheet(btn_clr_style)
-        btn_clr_vis.setToolTip(tr("settings.hotkey_clear_tip"))
-        btn_clr_vis.clicked.connect(self.btn_k_vis.clear_hotkey)
-        r_k_vis.addWidget(lbl_k_vis)
-        r_k_vis.addWidget(self.btn_k_vis)
-        r_k_vis.addWidget(btn_clr_vis)
-        r_k_vis.addStretch()
-        v_keys.addLayout(r_k_vis)
-
-        # Map and waypoints list Ctrl+M
-        r_k_map = QHBoxLayout()
-        lbl_k_map = QLabel(tr("settings.hotkey_map"))
-        lbl_k_map.setFixedWidth(200)
-        self.btn_k_map = HotkeyButton(self.cfg.get("hotkey_toggle_map", "Ctrl+M"))
-        btn_clr_map = QPushButton("❌")
-        btn_clr_map.setFixedSize(28, 28)
-        btn_clr_map.setStyleSheet(btn_clr_style)
-        btn_clr_map.setToolTip(tr("settings.hotkey_clear_tip"))
-        btn_clr_map.clicked.connect(self.btn_k_map.clear_hotkey)
-        r_k_map.addWidget(lbl_k_map)
-        r_k_map.addWidget(self.btn_k_map)
-        r_k_map.addWidget(btn_clr_map)
-        r_k_map.addStretch()
-        v_keys.addLayout(r_k_map)
-
-        # Button to reset all hotkeys to defaults
-        r_reset = QHBoxLayout()
-        btn_reset_all = QPushButton(tr("settings.hotkey_reset_all"))
-        btn_reset_all.setFixedHeight(30)
-        btn_reset_all.setStyleSheet("""
-            QPushButton {
-                background-color: #1e293b;
-                border: 1px solid #38bdf8;
-                border-radius: 6px;
-                color: #38bdf8;
-                font-size: 11px;
-                font-weight: bold;
-                padding: 4px 14px;
-            }
-            QPushButton:hover {
-                background-color: #0284c7;
-                color: white;
-            }
-        """)
         def reset_hotkeys_to_defaults():
             self.btn_k_chat.set_hotkey("T")
             self.btn_k_lock.set_hotkey("F9")
@@ -623,226 +431,24 @@ class SettingsDialog(QDialog):
             self.btn_k_map.set_hotkey("Ctrl+M")
 
         btn_reset_all.clicked.connect(reset_hotkeys_to_defaults)
-        r_reset.addWidget(btn_reset_all)
-        v_keys.addLayout(r_reset)
+        s.add_layout(button_row(btn_reset_all))
+        s.add_widget(muted_label(tr("settings.hotkey_smart_guard")))
+        page.add_section(s)
+        page.finish()
+        return page
 
-        # Safety hint
-        lbl_hint = QLabel(tr("settings.hotkey_smart_guard"))
-        lbl_hint.setWordWrap(True)
-        lbl_hint.setStyleSheet("""
-            background-color: rgba(2, 132, 199, 0.15);
-            border: 1px solid #0284c7;
-            border-radius: 6px;
-            color: #bae6fd;
-            padding: 10px;
-            font-size: 11px;
-            line-height: 1.4;
-        """)
-        v_keys.addWidget(lbl_hint)
-
-        v_keys.addStretch()
-        self.tabs.addTab(tab_keys, tr("settings.tab_keys"))
-
-        # ────────── TAB 4: Map & Coordinates ──────────
-        tab_map = QWidget()
-        v_map = QVBoxLayout(tab_map)
-        v_map.setContentsMargins(8, 12, 8, 12)
-        v_map.setSpacing(12)
-
-        # 1. Section: SCUM interactive map
-        lbl_sec_map = QLabel(tr("settings.map_sec_title"))
-        lbl_sec_map.setStyleSheet("color: #38bdf8; font-size: 13px;")
-        v_map.addWidget(lbl_sec_map)
-
-        r_var = QHBoxLayout()
-        lbl_var = QLabel(tr("settings.map_style"))
-        lbl_var.setFixedWidth(170)
-        self.combo_map_variant = QComboBox()
-        self.combo_map_variant.addItem(tr("settings.map_variant_regular"), "regular")
-        self.combo_map_variant.addItem(tr("settings.map_variant_tactical"), "tactical")
-        r_var.addWidget(lbl_var)
-        r_var.addWidget(self.combo_map_variant)
-        v_map.addLayout(r_var)
-
-        self.chk_map_grid = QCheckBox(tr("settings.map_grid"))
-        v_map.addWidget(self.chk_map_grid)
-
-        self.chk_map_keypads = QCheckBox(tr("settings.map_keypads"))
-        v_map.addWidget(self.chk_map_keypads)
-
-        self.chk_map_ontop = QCheckBox(tr("settings.map_ontop"))
-        v_map.addWidget(self.chk_map_ontop)
-
-        # Separator
-        line_map = QFrame()
-        line_map.setFrameShape(QFrame.Shape.HLine)
-        line_map.setStyleSheet("border: none; border-top: 1px solid #334155;")
-        v_map.addWidget(line_map)
-
-        # 2. Section: waypoints and coordinates from chat
-        lbl_sec_points = QLabel(tr("settings.map_sec_points"))
-        lbl_sec_points.setStyleSheet("color: #38bdf8; font-size: 13px;")
-        v_map.addWidget(lbl_sec_points)
-
-        self.chk_auto_focus = QCheckBox(tr("settings.map_auto_focus"))
-        v_map.addWidget(self.chk_auto_focus)
-
-        # Window geometry reset button
-        btn_reset_geo = QPushButton(tr("settings.map_reset_geo"))
-        btn_reset_geo.setFixedHeight(28)
-        btn_reset_geo.setStyleSheet("""
-            QPushButton {
-                background-color: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 5px;
-                color: #38bdf8;
-                font-weight: 600;
-                font-size: 11px;
-                padding: 4px 12px;
-            }
-            QPushButton:hover { background-color: #334155; border-color: #38bdf8; }
-        """)
-        btn_reset_geo.clicked.connect(self._reset_map_windows_geometry)
-        v_map.addWidget(btn_reset_geo)
-
-        v_map.addStretch()
-        self.tabs.addTab(tab_map, tr("settings.tab_map"))
-
-        # ────────── TAB 5: Updates ──────────
-        tab_update = QWidget()
-        v_update = QVBoxLayout(tab_update)
-        v_update.setContentsMargins(12, 16, 12, 16)
-        v_update.setSpacing(14)
-
-        lbl_up_title = QLabel(tr("settings.update_title"))
-        lbl_up_title.setStyleSheet("font-size: 15px; font-weight: bold; color: #38bdf8;")
-        v_update.addWidget(lbl_up_title)
-
-        lbl_up_ver = QLabel(tr("settings.update_current_ver", version=__version__))
-        lbl_up_ver.setStyleSheet("font-size: 13px;")
-        v_update.addWidget(lbl_up_ver)
-
-        self.chk_auto_update = QCheckBox(tr("settings.update_autocheck"))
-        v_update.addWidget(self.chk_auto_update)
-
-        up_shield = QFrame()
-        up_shield.setStyleSheet("""
-            QFrame {
-                background-color: rgba(34, 197, 94, 0.1);
-                border: 1px solid rgba(34, 197, 94, 0.3);
-                border-radius: 6px;
-                padding: 6px 10px;
-            }
-        """)
-        h_up_shield = QHBoxLayout(up_shield)
-        h_up_shield.setContentsMargins(6, 4, 6, 4)
-        lbl_up_shield_text = QLabel(tr("settings.update_guarantee"))
-        lbl_up_shield_text.setStyleSheet("color: #86efac; font-size: 11px;")
-        lbl_up_shield_text.setWordWrap(True)
-        h_up_shield.addWidget(lbl_up_shield_text)
-        v_update.addWidget(up_shield)
-
-        h_btn_check = QHBoxLayout()
-        self.btn_check_update = QPushButton(tr("settings.update_check_btn"))
-        self.btn_check_update.setFixedHeight(34)
-        self.btn_check_update.setStyleSheet("""
-            QPushButton {
-                background-color: #0284c7;
-                color: white;
-                border: 1px solid #0ea5e9;
-                border-radius: 6px;
-                padding: 4px 16px;
-                font-weight: bold;
-                font-size: 12px;
-            }
-            QPushButton:hover { background-color: #0369a1; }
-            QPushButton:disabled { background-color: #334155; color: #64748b; }
-        """)
-        self.btn_check_update.clicked.connect(self._manual_check_updates)
-        h_btn_check.addWidget(self.btn_check_update)
-
-        btn_open_repo = QPushButton(tr("settings.update_github_btn"))
-        btn_open_repo.setFixedHeight(34)
-        btn_open_repo.setStyleSheet("""
-            QPushButton {
-                background-color: #1e293b;
-                color: #cbd5e1;
-                border: 1px solid #334155;
-                border-radius: 6px;
-                padding: 4px 14px;
-                font-size: 12px;
-            }
-            QPushButton:hover { background-color: #334155; color: white; }
-        """)
-        btn_open_repo.clicked.connect(lambda: webbrowser.open(GITHUB_REPO_URL))
-        h_btn_check.addWidget(btn_open_repo)
-        h_btn_check.addStretch()
-        v_update.addLayout(h_btn_check)
-
-        self.lbl_update_status = QLabel("")
-        self.lbl_update_status.setStyleSheet("font-size: 12px; color: #94a3b8;")
-        v_update.addWidget(self.lbl_update_status)
-
-        v_update.addStretch()
-        self.tabs.addTab(tab_update, tr("settings.tab_update"))
-
-        # Filters & history, profiles and language tabs (see ui/settings_extra_tabs.py)
-        self.tab_filters = FiltersTab()
-        self.tabs.addTab(self.tab_filters, tr("settings.tab_filters"))
+    def _build_profiles_page(self) -> SettingsPage:
+        page = SettingsPage()
         self.tab_profiles = ProfilesTab(self.profiles)
         self.tab_profiles.profile_applied.connect(self._on_profile_applied)
         self.tab_profiles.snapshot_requested.connect(self._write_to_cfg)
-        self.tabs.addTab(self.tab_profiles, tr("settings.tab_profiles"))
-        self.tab_language = LanguageTab()
-        self.tabs.addTab(self.tab_language, tr("settings.tab_language"))
+        page.add_section(self.tab_profiles)
+        page.finish()
+        return page
 
-        main_layout.addWidget(self.tabs)
-
-        # Bottom action buttons
-        bottom_buttons = QHBoxLayout()
-        bottom_buttons.addStretch()
-
-        self.btn_save = QPushButton(tr("settings.save_btn"))
-        self.btn_save.setFixedHeight(32)
-        self.btn_save.setStyleSheet("""
-            QPushButton {
-                background-color: #059669;
-                border: 1px solid #10b981;
-                border-radius: 6px;
-                color: white;
-                padding: 4px 18px;
-                font-weight: bold;
-                font-size: 12px;
-            }
-            QPushButton:hover { background-color: #10b981; }
-        """)
-        self.btn_save.clicked.connect(self.save_settings)
-        bottom_buttons.addWidget(self.btn_save)
-
-        self.btn_cancel = QPushButton(tr("settings.cancel_btn"))
-        self.btn_cancel.setFixedHeight(32)
-        self.btn_cancel.setStyleSheet("""
-            QPushButton {
-                background-color: #334155;
-                border: 1px solid #475569;
-                border-radius: 6px;
-                color: #e2e8f0;
-                padding: 4px 14px;
-                font-weight: bold;
-                font-size: 12px;
-            }
-            QPushButton:hover { background-color: #475569; }
-        """)
-        self.btn_cancel.clicked.connect(self.reject)
-        bottom_buttons.addWidget(self.btn_cancel)
-
-        main_layout.addLayout(bottom_buttons)
-
+    # ── behaviour ────────────────────────────────────────────────────
     def _on_fade_slider_changed(self, v: int):
-        if v == 0:
-            self.badge_fade.setText(tr("settings.fade_always"))
-        else:
-            self.badge_fade.setText(tr("settings.fade_seconds", seconds=v))
+        self.badge_fade.setText(tr("settings.fade_always") if v == 0 else tr("settings.fade_seconds", seconds=v))
 
     def _on_profile_applied(self):
         """A profile changed the live config: refresh every widget and notify the app."""
@@ -850,117 +456,86 @@ class SettingsDialog(QDialog):
         self.settings_changed.emit()
 
     def load_settings(self):
-        self.tab_filters.load(self.cfg)
         self.tab_language.load(self.cfg)
+        self.section_words.load(self.cfg)
+        self.section_detect.load(self.cfg)
+        self.section_history.load(self.cfg)
 
         self.chk_enable_chat.setChecked(self.cfg.get("enable_chat_translator", True))
         self.chk_autostart.setChecked(self.cfg.get("auto_start", True))
-
         self.txt_log_path.setText(self.cfg.get("log_file_path", r"%LOCALAPPDATA%\SCUM\Saved\Logs\SCUM.log"))
-
-        in_lang = self.cfg.get("target_language", "uk")
-        idx = self.combo_in_lang.findData(in_lang)
-        if idx >= 0:
-            self.combo_in_lang.setCurrentIndex(idx)
-
-        self.chk_show_orig.setChecked(self.cfg.get("show_original", True))
         self.txt_nickname.setText(self.cfg.get("own_nickname", ""))
-        blacklist = self.cfg.get("blacklist_nicknames", [])
-        if isinstance(blacklist, list):
-            self.txt_blacklist.setText(", ".join(blacklist))
-        else:
-            self.txt_blacklist.setText(str(blacklist))
+        self.chk_auto_update.setChecked(self.cfg.get("auto_check_updates", True))
+        self.spin_update_hours.setValue(int(self.cfg.get("update_check_interval_hours", 6) or 0))
+
+        self.combo_in_lang.setCurrentIndex(max(0, self.combo_in_lang.findData(self.cfg.get("target_language", "uk"))))
+        self.chk_show_orig.setChecked(self.cfg.get("show_original", True))
         self.chk_ignore_own.setChecked(self.cfg.get("ignore_own_messages", False))
+        blacklist = self.cfg.get("blacklist_nicknames", [])
+        self.txt_blacklist.setText(", ".join(blacklist) if isinstance(blacklist, list) else str(blacklist))
+
         self.chk_font_bold.setChecked(self.cfg.get("font_bold", False))
         self.chk_text_outline.setChecked(self.cfg.get("text_outline", True))
-
-        mode = self.cfg.get("ui_display_mode", "none")
-        idx_mode = self.combo_display_mode.findData(mode)
-        if idx_mode >= 0:
-            self.combo_display_mode.setCurrentIndex(idx_mode)
-
-        fade_val = self.cfg.get("message_fade_timeout", 10)
-        self.slider_fade.setValue(fade_val)
-        self._on_fade_slider_changed(fade_val)
-
-        opacity_val = int(self.cfg.get("bg_opacity", 0.5) * 100)
-        self.slider_opacity.setValue(opacity_val)
-        self.badge_opacity.setText(f"{opacity_val}%")
-
-        font_val = self.cfg.get("font_size", 13)
-        self.slider_font.setValue(font_val)
-        self.badge_font.setText(f"{font_val} px")
-
-        msgs_val = self.cfg.get("max_messages", 20)
-        self.slider_msgs.setValue(msgs_val)
-        self.badge_msgs.setText(tr("settings.msgs_count", count=msgs_val))
+        self.combo_display_mode.setCurrentIndex(
+            max(0, self.combo_display_mode.findData(self.cfg.get("ui_display_mode", "none"))))
+        self.slider_fade.setValue(self.cfg.get("message_fade_timeout", 10))
+        self._on_fade_slider_changed(self.slider_fade.value())
+        opacity = int(self.cfg.get("bg_opacity", 0.5) * 100)
+        self.slider_opacity.setValue(opacity)
+        self.badge_opacity.setText(f"{opacity}%")
+        font = self.cfg.get("font_size", 13)
+        self.slider_font.setValue(font)
+        self.badge_font.setText(f"{font} px")
+        msgs = self.cfg.get("max_messages", 20)
+        self.slider_msgs.setValue(msgs)
+        self.badge_msgs.setText(tr("settings.msgs_count", count=msgs))
 
         self.btn_k_lock.set_hotkey(self.cfg.get("hotkey_toggle_lock", "F9"))
         self.btn_k_vis.set_hotkey(self.cfg.get("hotkey_toggle_visibility", "F8"))
         self.btn_k_chat.set_hotkey(self.cfg.get("hotkey_quick_chat", "T"))
         self.btn_k_map.set_hotkey(self.cfg.get("hotkey_toggle_map", "Ctrl+M"))
 
-        # Map settings
-        m_var = self.cfg.get("map_variant", "regular")
-        idx_var = self.combo_map_variant.findData(m_var)
-        if idx_var >= 0:
-            self.combo_map_variant.setCurrentIndex(idx_var)
-
+        self.combo_map_variant.setCurrentIndex(max(0, self.combo_map_variant.findData(self.cfg.get("map_variant", "regular"))))
         self.chk_map_grid.setChecked(self.cfg.get("map_show_grid", True))
         self.chk_map_keypads.setChecked(self.cfg.get("map_show_keypads", True))
         self.chk_map_ontop.setChecked(self.cfg.get("map_on_top", True))
         self.chk_auto_focus.setChecked(self.cfg.get("auto_focus_new_point", True))
-        self.chk_auto_update.setChecked(self.cfg.get("auto_check_updates", True))
 
     def _manual_check_updates(self):
         self.btn_check_update.setEnabled(False)
         self.lbl_update_status.setText(tr("settings.update_checking"))
-        self.lbl_update_status.setStyleSheet("color: #38bdf8; font-size: 12px;")
 
         checker = UpdateChecker()
 
         def on_update_available(info):
             self.btn_check_update.setEnabled(True)
             self.lbl_update_status.setText(tr("settings.update_available", version=info.version))
-            self.lbl_update_status.setStyleSheet("color: #22c55e; font-size: 12px; font-weight: bold;")
-            dlg = UpdateDialog(info, self)
-            dlg.exec()
+            UpdateDialog(info, self).exec()
 
         def on_no_update(curr_ver):
             self.btn_check_update.setEnabled(True)
             self.lbl_update_status.setText(tr("settings.update_latest", version=curr_ver))
-            self.lbl_update_status.setStyleSheet("color: #22c55e; font-size: 12px;")
 
         def on_error(err_msg):
             self.btn_check_update.setEnabled(True)
             self.lbl_update_status.setText(tr("settings.update_error", error=err_msg))
-            self.lbl_update_status.setStyleSheet("color: #ef4444; font-size: 12px;")
 
         checker.update_available.connect(on_update_available)
         checker.no_update_found.connect(on_no_update)
         checker.check_error.connect(on_error)
-        # Keep a reference to the checker so GC does not collect it
-        self._active_checker = checker
+        self._active_checker = checker  # keep a reference so it is not garbage collected
         checker.check_for_updates_async()
 
     def _reset_map_windows_geometry(self):
-        self.cfg.set("map_x", -1)
-        self.cfg.set("map_y", -1)
-        self.cfg.set("map_width", 960)
-        self.cfg.set("map_height", 660)
-        self.cfg.set("points_x", -1)
-        self.cfg.set("points_y", -1)
-        self.cfg.set("points_width", 960)
-        self.cfg.set("points_height", 240)
+        for key, value in (("map_x", -1), ("map_y", -1), ("map_width", 960), ("map_height", 660),
+                           ("points_x", -1), ("points_y", -1), ("points_width", 960), ("points_height", 280)):
+            self.cfg.set(key, value)
 
     def browse_log_file(self):
         default_dir = os.path.expandvars(r"%LOCALAPPDATA%\SCUM\Saved\Logs")
         file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            tr("settings.log_dialog_title"),
-            default_dir if os.path.exists(default_dir) else "",
-            "Log Files (*.log);;All Files (*)"
-        )
+            self, tr("settings.log_dialog_title"), default_dir if os.path.exists(default_dir) else "",
+            "Log Files (*.log);;All Files (*)")
         if file_path:
             self.txt_log_path.setText(file_path)
 
@@ -971,10 +546,12 @@ class SettingsDialog(QDialog):
 
     def _write_to_cfg(self):
         """Persist every widget value into the config (without closing the dialog)."""
-        self.tab_filters.save(self.cfg)
         self.tab_language.save(self.cfg)
-        self.cfg.set("enable_chat_translator", self.chk_enable_chat.isChecked())
+        self.section_words.save(self.cfg)
+        self.section_detect.save(self.cfg)
+        self.section_history.save(self.cfg)
 
+        self.cfg.set("enable_chat_translator", self.chk_enable_chat.isChecked())
         autostart_val = self.chk_autostart.isChecked()
         self.cfg.set("auto_start", autostart_val)
         try:
@@ -982,15 +559,16 @@ class SettingsDialog(QDialog):
             set_autostart(autostart_val)
         except Exception as e:
             log.warning("Could not set autostart: %s", e)
-
         self.cfg.set("log_file_path", self.txt_log_path.text().strip())
+        self.cfg.set("own_nickname", self.txt_nickname.text().strip())
+        self.cfg.set("auto_check_updates", self.chk_auto_update.isChecked())
+        self.cfg.set("update_check_interval_hours", self.spin_update_hours.value())
+
         self.cfg.set("target_language", self.combo_in_lang.currentData())
         self.cfg.set("show_original", self.chk_show_orig.isChecked())
-        self.cfg.set("own_nickname", self.txt_nickname.text().strip())
-        raw_bl = self.txt_blacklist.text().strip()
-        bl_list = [n.strip() for n in raw_bl.split(",") if n.strip()]
-        self.cfg.set("blacklist_nicknames", bl_list)
         self.cfg.set("ignore_own_messages", self.chk_ignore_own.isChecked())
+        self.cfg.set("blacklist_nicknames", [n.strip() for n in self.txt_blacklist.text().split(",") if n.strip()])
+
         self.cfg.set("font_bold", self.chk_font_bold.isChecked())
         self.cfg.set("text_outline", self.chk_text_outline.isChecked())
         self.cfg.set("ui_display_mode", self.combo_display_mode.currentData())
@@ -1005,10 +583,8 @@ class SettingsDialog(QDialog):
         self.cfg.set("game_chat_key", self.btn_k_chat.current_hotkey)
         self.cfg.set("hotkey_toggle_map", self.btn_k_map.current_hotkey)
 
-        # Map settings
         self.cfg.set("map_variant", self.combo_map_variant.currentData())
         self.cfg.set("map_show_grid", self.chk_map_grid.isChecked())
         self.cfg.set("map_show_keypads", self.chk_map_keypads.isChecked())
         self.cfg.set("map_on_top", self.chk_map_ontop.isChecked())
         self.cfg.set("auto_focus_new_point", self.chk_auto_focus.isChecked())
-        self.cfg.set("auto_check_updates", self.chk_auto_update.isChecked())

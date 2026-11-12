@@ -5,7 +5,19 @@ import sys
 from typing import Optional
 
 from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor, QFont, QImage, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPen, QWheelEvent
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QFontMetrics,
+    QImage,
+    QKeyEvent,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QWheelEvent,
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -15,6 +27,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QPushButton,
     QSizeGrip,
+    QSizePolicy,
     QToolTip,
     QVBoxLayout,
     QWidget,
@@ -26,6 +39,7 @@ from core.coordinate_parser import (
     MapPoint,
     convert_norm_to_scum,
     get_category_info,
+    get_category_label,
     get_sector_info,
 )
 from core.i18n import tr
@@ -33,6 +47,36 @@ from core.points_manager import PointsManager
 from ui.color_picker import open_safe_color_dialog
 
 log = logging.getLogger("scum.map")
+
+
+class _ElidedLabel(QLabel):
+    """Single-line label that elides its text to the available width (full text in the tooltip)."""
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self._full = ""
+        self.setText(text)
+
+    def setText(self, text: str):  # noqa: N802
+        self._full = text.replace("<b>", "").replace("</b>", "")
+        self.setToolTip(self._full)
+        self._apply_elide()
+
+    def _apply_elide(self):
+        m = self.contentsMargins()
+        avail = max(20, self.width() - m.left() - m.right() - 18)
+        QLabel.setText(self, QFontMetrics(self.font()).elidedText(self._full, Qt.TextElideMode.ElideRight, avail))
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self._apply_elide()
+
+    def minimumSizeHint(self):  # noqa: N802
+        sh = super().minimumSizeHint()
+        sh.setWidth(40)
+        return sh
 
 
 class MapCanvasWidget(QWidget):
@@ -255,11 +299,11 @@ class MapCanvasWidget(QWidget):
         menu.addSeparator()
 
         # 1. Marker type submenu
-        type_menu = menu.addMenu(tr("map_window.menu_type", name=cat_info['name']))
+        type_menu = menu.addMenu(tr("map_window.menu_type", name=get_category_label(cur_cat)))
         type_menu.setStyleSheet(menu.styleSheet())
         for cid, cdata in POINT_CATEGORIES.items():
             mark = "✓ " if cur_cat == cid else ""
-            act = type_menu.addAction(f"{mark}{cdata['emoji']} {cdata['name']}")
+            act = type_menu.addAction(f"{mark}{cdata['emoji']} {get_category_label(cid)}")
             act.triggered.connect(lambda checked=False, c=cid: self._set_point_category(point, c))
 
         # 2. For a base: edit player nicknames
@@ -393,7 +437,7 @@ class MapCanvasWidget(QWidget):
                     cat_info = get_category_info(cur_cat)
                     lines = [
                         f"{cat_info['emoji']} {hovered.name}",
-                        tr("map_window.tip_type", name=cat_info['name'])
+                        tr("map_window.tip_type", name=get_category_label(cur_cat))
                     ]
                     if cur_cat == "base":
                         pl = getattr(hovered, "players", "")
@@ -690,19 +734,19 @@ class MapWindow(QWidget):
 
     def _build_top_bar(self, layout: QVBoxLayout):
         top_bar = QWidget()
-        top_bar.setFixedHeight(38)
         top_bar.setStyleSheet("background: transparent;")
         h = QHBoxLayout(top_bar)
         h.setContentsMargins(6, 2, 6, 2)
-        h.setSpacing(8)
+        h.setSpacing(6)
 
         # Title
-        lbl_title = QLabel("🗺 <b>SCUM Island Map</b>")
+        lbl_title = QLabel(f"<b>{tr('map_window.title', default='SCUM Island Map')}</b>")
         lbl_title.setStyleSheet("color: #38bdf8; font-size: 13px;")
+        lbl_title.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         h.addWidget(lbl_title)
 
-        # Cursor info
-        self.lbl_cursor = QLabel(tr("map_window.cursor_hint"))
+        # Cursor info (elided when space is short, full text in the tooltip)
+        self.lbl_cursor = _ElidedLabel(tr("map_window.cursor_hint"))
         self.lbl_cursor.setStyleSheet("""
             QLabel {
                 background-color: #0f172a;
@@ -710,15 +754,12 @@ class MapWindow(QWidget):
                 border-radius: 4px;
                 color: #e2e8f0;
                 font-size: 11px;
-                font-family: 'Consolas', monospace;
+                font-family: 'Consolas', 'Segoe UI', monospace;
                 padding: 3px 8px;
             }
         """)
-        h.addWidget(self.lbl_cursor)
+        h.addWidget(self.lbl_cursor, 1)
 
-        h.addStretch()
-
-        # Map selection buttons
         btn_style = """
             QPushButton {
                 background-color: #1e293b;
@@ -734,66 +775,68 @@ class MapWindow(QWidget):
                 border-color: #38bdf8;
                 color: white;
             }
+            QPushButton:checked {
+                border-color: #38bdf8;
+                color: #38bdf8;
+            }
+        """
+        icon_style = btn_style + """
+            QPushButton {
+                font-family: 'Segoe UI Symbol', 'Segoe UI', sans-serif;
+                font-size: 14px;
+                padding: 0px 4px;
+            }
         """
 
+        def _icon_btn(text: str, tip: str, slot) -> QPushButton:
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.setMinimumSize(28, 28)
+            b.setStyleSheet(icon_style)
+            b.clicked.connect(slot)
+            return b
+
         self.btn_var = QPushButton(tr("map_window.variant_satellite") if self.canvas.current_variant == "regular" else tr("map_window.variant_tactical"))
+        self.btn_var.setMinimumHeight(28)
         self.btn_var.setStyleSheet(btn_style)
         self.btn_var.clicked.connect(self._toggle_variant)
         h.addWidget(self.btn_var)
 
         self.btn_grid = QPushButton(tr("map_window.grid"))
+        self.btn_grid.setMinimumHeight(28)
         self.btn_grid.setCheckable(True)
         self.btn_grid.setChecked(self.canvas.show_grid)
         self.btn_grid.setStyleSheet(btn_style)
         self.btn_grid.clicked.connect(self.canvas.toggle_grid)
         h.addWidget(self.btn_grid)
 
-        # Zoom buttons
-        btn_zoom_in = QPushButton("➕")
-        btn_zoom_in.setFixedSize(26, 26)
-        btn_zoom_in.setStyleSheet(btn_style)
-        btn_zoom_in.clicked.connect(lambda: self._step_zoom(1.25))
-        h.addWidget(btn_zoom_in)
+        h.addWidget(_icon_btn("+", tr("map_window.tip_zoom_in", default="Zoom in"), lambda: self._step_zoom(1.25)))
+        h.addWidget(_icon_btn("\u2212", tr("map_window.tip_zoom_out", default="Zoom out"), lambda: self._step_zoom(0.8)))
+        h.addWidget(_icon_btn("\u27F2", tr("map_window.tip_reset"), self.canvas.reset_view))
 
-        btn_zoom_out = QPushButton("➖")
-        btn_zoom_out.setFixedSize(26, 26)
-        btn_zoom_out.setStyleSheet(btn_style)
-        btn_zoom_out.clicked.connect(lambda: self._step_zoom(0.8))
-        h.addWidget(btn_zoom_out)
-
-        btn_reset = QPushButton("⟲")
-        btn_reset.setToolTip(tr("map_window.tip_reset"))
-        btn_reset.setFixedSize(26, 26)
-        btn_reset.setStyleSheet(btn_style)
-        btn_reset.clicked.connect(self.canvas.reset_view)
-        h.addWidget(btn_reset)
-
-        # Close
-        btn_close = QPushButton("✕")
-        btn_close.setToolTip(tr("map_window.tip_close"))
-        btn_close.setFixedSize(26, 26)
+        btn_close = _icon_btn("\u2715", tr("map_window.tip_close"), self.close)
         btn_close.setStyleSheet("""
             QPushButton {
                 background-color: #1e293b;
                 border: 1px solid #ef4444;
                 border-radius: 4px;
                 color: #f87171;
+                font-family: 'Segoe UI Symbol', 'Segoe UI', sans-serif;
                 font-weight: bold;
-                font-size: 12px;
+                font-size: 13px;
+                padding: 0px 4px;
             }
             QPushButton:hover {
                 background-color: #ef4444;
                 color: white;
             }
         """)
-        btn_close.clicked.connect(self.close)
         h.addWidget(btn_close)
 
         layout.addWidget(top_bar)
 
     def _build_bottom_bar(self, layout: QVBoxLayout):
         bottom_bar = QWidget()
-        bottom_bar.setFixedHeight(24)
         bottom_bar.setStyleSheet("background: transparent;")
         h = QHBoxLayout(bottom_bar)
         h.setContentsMargins(6, 0, 0, 0)
@@ -801,14 +844,15 @@ class MapWindow(QWidget):
 
         lbl_hint = QLabel(tr("map_window.hint"))
         lbl_hint.setStyleSheet("color: #64748b; font-size: 11px;")
-        h.addWidget(lbl_hint)
-
-        h.addStretch()
+        lbl_hint.setWordWrap(True)
+        lbl_hint.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        lbl_hint.setMinimumHeight(QFontMetrics(lbl_hint.font()).height() * 2 + 4)
+        h.addWidget(lbl_hint, 1)
 
         grip = QSizeGrip(self)
         grip.setFixedSize(16, 16)
         grip.setStyleSheet("background: transparent; color: #38bdf8;")
-        h.addWidget(grip)
+        h.addWidget(grip, 0, Qt.AlignmentFlag.AlignBottom)
 
         layout.addWidget(bottom_bar)
 
@@ -872,8 +916,8 @@ class MapWindow(QWidget):
         saved_x = self.cfg.get("map_x", -1)
         saved_y = self.cfg.get("map_y", -1)
 
-        w = max(500, min(w, sw - 40))
-        h = max(400, min(h, sh - 40))
+        w = max(self.minimumSizeHint().width(), 500, min(w, sw - 40))
+        h = max(self.minimumSizeHint().height(), 400, min(h, sh - 40))
 
         if saved_x is None or saved_x < 0 or saved_y is None or saved_y < 0:
             x = sx + (sw - w) // 2

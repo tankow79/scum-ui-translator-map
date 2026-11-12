@@ -101,7 +101,7 @@ class PointsManager(QObject):
         raise ValueError("Unrecognised waypoint file format")
 
     def import_from_file(self, path: str, replace: bool = False) -> ImportResult:
-        """Import waypoints from JSON. ``replace=True`` swaps the whole list (a .bak copy is kept).
+        """Import waypoints from JSON. ``replace=True`` swaps the whole list (the previous list is kept as points.before_import.json).
 
         Raises ``ValueError`` / ``OSError`` for unreadable or unrecognised files; individual bad
         entries are skipped and counted in ``ImportResult.invalid``.
@@ -121,7 +121,7 @@ class PointsManager(QObject):
 
         if replace and os.path.exists(self.file_path):
             try:
-                shutil.copy2(self.file_path, self.file_path + ".bak")
+                shutil.copy2(self.file_path, os.path.join(os.path.dirname(self.file_path), "points.before_import.json"))
             except OSError as exc:
                 log.warning("Could not back up points before import: %s", exc)
 

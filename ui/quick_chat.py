@@ -1,6 +1,16 @@
 from PyQt6.QtCore import QPoint, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QKeyEvent
-from PyQt6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtGui import QFontMetrics, QKeyEvent
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.config_manager import ConfigManager
 from core.i18n import tr
@@ -40,6 +50,7 @@ class QuickChatDialog(QWidget):
             Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setMinimumWidth(420)
         self.resize(580, 205)
 
     def init_ui(self):
@@ -77,7 +88,7 @@ class QuickChatDialog(QWidget):
                 font-size: 11px;
                 font-weight: bold;
                 padding: 3px 6px;
-                min-width: 130px;
+                min-height: 20px;
             }
             QComboBox:hover {
                 border-color: #00d2ff;
@@ -123,32 +134,47 @@ class QuickChatDialog(QWidget):
         card_layout.setContentsMargins(12, 10, 12, 10)
         card_layout.setSpacing(8)
 
-        # 1. Top bar (title, two language pickers, swap button, close)
-        top_bar = QHBoxLayout()
-        top_bar.setSpacing(6)
+        # 1. Title row (title, close)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
 
         self.lbl_title = QLabel(tr("quick_chat.title"))
         self.lbl_title.setStyleSheet("color: #00d2ff; font-weight: bold; font-size: 12px;")
-        top_bar.addWidget(self.lbl_title)
+        self.lbl_title.setWordWrap(True)
+        title_row.addWidget(self.lbl_title, 1)
 
-        top_bar.addStretch()
+        self.btn_close = QPushButton("\u2715")
+        self.btn_close.setMinimumSize(28, 28)
+        self.btn_close.setToolTip(tr("overlay_ui.close", default="Close"))
+        self.btn_close.setStyleSheet(
+            "QPushButton { background-color: #4b5563; border-radius: 4px; font-weight: bold; padding: 0px 4px;"
+            " font-family: 'Segoe UI Symbol', 'Segoe UI', sans-serif; font-size: 13px; }"
+            "QPushButton:hover { background-color: #ef4444; }"
+        )
+        self.btn_close.clicked.connect(self.hide)
+        title_row.addWidget(self.btn_close)
+        card_layout.addLayout(title_row)
+
+        # 2. Language row (source, swap, target)
+        lang_row = QHBoxLayout()
+        lang_row.setSpacing(6)
 
         self.combo_src = QComboBox()
-        for name, code in ALL_LANGUAGES:
-            self.combo_src.addItem(name, code)
+        self._setup_lang_combo(self.combo_src)
         self.combo_src.currentIndexChanged.connect(self._on_languages_changed)
-        top_bar.addWidget(self.combo_src)
+        lang_row.addWidget(self.combo_src, 1)
 
-        self.btn_swap = QPushButton("⇄")
-        self.btn_swap.setFixedSize(26, 24)
+        self.btn_swap = QPushButton("\u21C4")
+        self.btn_swap.setMinimumSize(32, 28)
         self.btn_swap.setToolTip(tr("quick_chat.swap_tooltip"))
         self.btn_swap.setStyleSheet("""
             QPushButton {
                 background-color: #334155;
                 border: 1px solid #475569;
-                font-size: 14px;
+                font-family: 'Segoe UI Symbol', 'Segoe UI', sans-serif;
+                font-size: 15px;
                 font-weight: bold;
-                padding: 0px;
+                padding: 0px 4px;
             }
             QPushButton:hover {
                 background-color: #0284c7;
@@ -156,29 +182,22 @@ class QuickChatDialog(QWidget):
             }
         """)
         self.btn_swap.clicked.connect(self.swap_languages)
-        top_bar.addWidget(self.btn_swap)
+        lang_row.addWidget(self.btn_swap)
 
         self.combo_tgt = QComboBox()
-        for name, code in ALL_LANGUAGES:
-            self.combo_tgt.addItem(name, code)
+        self._setup_lang_combo(self.combo_tgt)
         self.combo_tgt.currentIndexChanged.connect(self._on_languages_changed)
-        top_bar.addWidget(self.combo_tgt)
+        lang_row.addWidget(self.combo_tgt, 1)
 
-        self.btn_close = QPushButton("✕")
-        self.btn_close.setFixedSize(22, 22)
-        self.btn_close.setStyleSheet("background-color: #4b5563; border-radius: 11px; font-weight: bold;")
-        self.btn_close.clicked.connect(self.hide)
-        top_bar.addWidget(self.btn_close)
+        card_layout.addLayout(lang_row)
 
-        card_layout.addLayout(top_bar)
-
-        # 2. Message input field
+        # 3. Message input field
         self.input_field = QLineEdit()
         self.input_field.setPlaceholderText(tr("quick_chat.input_placeholder"))
         self.input_field.textChanged.connect(self._on_text_changed)
         card_layout.addWidget(self.input_field)
 
-        # 3. Translation result field
+        # 4. Translation result field
         self.lbl_translation = QLabel(f"<i>{tr('quick_chat.placeholder_result')}</i>")
         self.lbl_translation.setStyleSheet("""
             background-color: rgba(0, 0, 0, 0.45);
@@ -192,13 +211,14 @@ class QuickChatDialog(QWidget):
         self.lbl_translation.setWordWrap(True)
         card_layout.addWidget(self.lbl_translation)
 
-        # 4. Bottom bar (actions and hints)
+        # 5. Bottom bar (actions and hints)
         bottom_bar = QHBoxLayout()
         self.lbl_status = QLabel(tr("quick_chat.hint_html"))
         self.lbl_status.setStyleSheet("color: #8899aa; font-size: 10px;")
-        bottom_bar.addWidget(self.lbl_status)
-
-        bottom_bar.addStretch()
+        self.lbl_status.setWordWrap(True)
+        self.lbl_status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.lbl_status.setMinimumHeight(QFontMetrics(self.lbl_status.font()).height() * 2 + 2)
+        bottom_bar.addWidget(self.lbl_status, 1)
 
         self.btn_copy = QPushButton(tr("quick_chat.copy_btn"))
         self.btn_copy.setStyleSheet("""
@@ -210,12 +230,25 @@ class QuickChatDialog(QWidget):
             QPushButton:hover { background-color: #22c55e; }
         """)
         self.btn_copy.clicked.connect(self.copy_and_close)
-        bottom_bar.addWidget(self.btn_copy)
+        bottom_bar.addWidget(self.btn_copy, 0, Qt.AlignmentFlag.AlignBottom)
 
         card_layout.addLayout(bottom_bar)
         main_layout.addWidget(self.card)
 
         self.sync_combos_from_config()
+
+    @staticmethod
+    def _setup_lang_combo(combo: QComboBox):
+        """Fill a language combo; it sizes to a sane width, elides long names and shows full names in the popup."""
+        combo.setMaxVisibleItems(20)
+        for name, code in ALL_LANGUAGES:
+            combo.addItem(name, code)
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(12)
+        combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        fm = QFontMetrics(combo.font())
+        widest = max((fm.horizontalAdvance(n) for n, _ in ALL_LANGUAGES), default=0)
+        combo.view().setMinimumWidth(widest + 48)
 
     def sync_combos_from_config(self):
         my_l = self.cfg.get("outgoing_my_lang", "uk")

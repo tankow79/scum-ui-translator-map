@@ -47,7 +47,7 @@ def test_replace_swaps_list_and_keeps_backup(manager, tmp_path):
     src.write_text(json.dumps([make_point("z", "Cache", 900).to_dict()]), encoding="utf-8")  # legacy list format
     result = manager.import_from_file(str(src), replace=True)
     assert result.added == 1 and [p.name for p in manager.get_points()] == ["Cache"]
-    assert (tmp_path / "points.json.bak").exists()
+    assert (tmp_path / "points.before_import.json").exists()
     assert json.loads((tmp_path / "points.json").read_text(encoding="utf-8"))[0]["name"] == "Cache"
 
 

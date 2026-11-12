@@ -281,21 +281,113 @@ class UpdateDownloader(QObject):
 class UpdateInstaller:
     """Installs a downloaded update by swapping the executable in place."""
 
+    BACKUP_DIR_NAME = ".update_backup"
+
+    @staticmethod
+    def _sha256_file(path: str) -> str:
+        digest = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _is_valid_json(path: str) -> bool:
+        try:
+            with open(path, encoding="utf-8") as f:
+                json.load(f)
+            return True
+        except (OSError, ValueError):
+            return False
+
     @staticmethod
     def backup_user_data(app_dir: str) -> Dict[str, str]:
-        """Copy user data files into ``.update_backup/backup_<ts>/`` and next to the originals as ``.bak``."""
+        """Copy user data into ``.update_backup/backup_<ts>/`` and verify every copy byte-for-byte.
+
+        Raises ``UpdateError`` (before anything is changed) when a copy cannot be made or does not match.
+        Older backup folders are removed so only the newest one exists.
+        """
+        root = os.path.join(app_dir, UpdateInstaller.BACKUP_DIR_NAME)
+        backup_dir = os.path.join(root, f"backup_{int(time.time())}")
         backups: Dict[str, str] = {}
-        backup_dir = os.path.join(app_dir, ".update_backup", f"backup_{int(time.time())}")
-        for filename in PROTECTED_USER_DATA_FILES:
-            src = os.path.join(app_dir, filename)
-            if not os.path.exists(src):
-                continue
-            os.makedirs(backup_dir, exist_ok=True)
-            bak = os.path.join(app_dir, f"{filename}.bak")
-            shutil.copy2(src, bak)
-            shutil.copy2(src, os.path.join(backup_dir, filename))
-            backups[filename] = bak
+        try:
+            for filename in PROTECTED_USER_DATA_FILES:
+                src = os.path.join(app_dir, filename)
+                if not os.path.exists(src):
+                    continue
+                os.makedirs(backup_dir, exist_ok=True)
+                dst = os.path.join(backup_dir, filename)
+                shutil.copy2(src, dst)
+                if UpdateInstaller._sha256_file(src) != UpdateInstaller._sha256_file(dst):
+                    raise OSError(f"backup of {filename} does not match the original")
+                backups[filename] = dst
+        except OSError as exc:
+            raise UpdateError(f"Could not back up your settings, so the update was cancelled: {exc}") from exc
+        if os.path.isdir(root):  # keep only the newest backup
+            for entry in os.listdir(root):
+                full = os.path.join(root, entry)
+                if full != backup_dir and os.path.isdir(full):
+                    shutil.rmtree(full, ignore_errors=True)
         return backups
+
+    @staticmethod
+    def _backup_sources(app_dir: str) -> Dict[str, List[str]]:
+        """Backup candidates per protected file: newest ``.update_backup`` copy first, legacy ``.bak`` last."""
+        result: Dict[str, List[str]] = {name: [] for name in PROTECTED_USER_DATA_FILES}
+        root = os.path.join(app_dir, UpdateInstaller.BACKUP_DIR_NAME)
+        if os.path.isdir(root):
+            for entry in sorted(os.listdir(root), reverse=True):
+                for name in PROTECTED_USER_DATA_FILES:
+                    candidate = os.path.join(root, entry, name)
+                    if os.path.isfile(candidate):
+                        result[name].append(candidate)
+        for name in PROTECTED_USER_DATA_FILES:
+            legacy = os.path.join(app_dir, f"{name}.bak")
+            if os.path.isfile(legacy):
+                result[name].append(legacy)
+        return result
+
+    @staticmethod
+    def restore_damaged_user_data(app_dir: Optional[str] = None) -> List[str]:
+        """Run at startup BEFORE the settings are loaded: restore a user file that vanished or became unreadable.
+
+        Returns the names of the files that were restored. Healthy files are never touched.
+        """
+        app_dir = app_dir or get_application_root_dir()
+        restored: List[str] = []
+        for name, candidates in UpdateInstaller._backup_sources(app_dir).items():
+            target = os.path.join(app_dir, name)
+            if os.path.exists(target) and UpdateInstaller._is_valid_json(target):
+                continue
+            for candidate in candidates:
+                if UpdateInstaller._is_valid_json(candidate):
+                    try:
+                        shutil.copy2(candidate, target)
+                        restored.append(name)
+                        log.warning("Restored %s from backup %s", name, candidate)
+                    except OSError as exc:
+                        log.error("Could not restore %s: %s", name, exc)
+                    break
+        return restored
+
+    @staticmethod
+    def remove_backups(app_dir: Optional[str] = None) -> bool:
+        """Delete update backups once the app runs fine. Skipped (backups kept) if any user file is missing/invalid."""
+        app_dir = app_dir or get_application_root_dir()
+        sources = UpdateInstaller._backup_sources(app_dir)
+        for name, candidates in sources.items():
+            if candidates and not UpdateInstaller._is_valid_json(os.path.join(app_dir, name)):
+                log.warning("Keeping update backups: %s is missing or unreadable", name)
+                return False
+        for candidates in sources.values():
+            for candidate in candidates:
+                if candidate.endswith(".bak"):
+                    try:
+                        os.remove(candidate)
+                    except OSError as exc:
+                        log.debug("Could not delete %s: %s", candidate, exc)
+        shutil.rmtree(os.path.join(app_dir, UpdateInstaller.BACKUP_DIR_NAME), ignore_errors=True)
+        return True
 
     @staticmethod
     def safe_extract_zip(zip_path: str, target_dir: str):
