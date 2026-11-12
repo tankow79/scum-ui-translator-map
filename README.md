@@ -2,24 +2,78 @@
 
 # 🗺️ SCUM Tactical Map & Real-Time Chat Translator 💬
 
-[![Release](https://img.shields.io/github/v/release/tankow79/scum-ui-translator-map?style=for-the-badge&color=blue)](https://github.com/tankow79/scum-ui-translator-map/releases)
-[![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg?style=for-the-badge&logo=python)](https://www.python.org/)
-[![GUI Framework](https://img.shields.io/badge/PyQt-6.6%2B-green.svg?style=for-the-badge&logo=qt)](https://www.riverbankcomputing.com/software/pyqt/)
+[![Release](https://img.shields.io/github/v/release/tankow79/scum-ui-translator-map?style=for-the-badge&color=blue)](https://github.com/tankow79/scum-ui-translator-map/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/tankow79/scum-ui-translator-map/total?style=for-the-badge&color=success)](https://github.com/tankow79/scum-ui-translator-map/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6.svg?style=for-the-badge&logo=windows)](https://microsoft.com)
 [![CI](https://img.shields.io/github/actions/workflow/status/tankow79/scum-ui-translator-map/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/tankow79/scum-ui-translator-map/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
-**An all-in-one in-game tactical suite for SCUM (Steam): high-precision interactive tactical island map with automatic GPS coordinate interception, sector grid (D0–Z4 / k1–k9), categorized waypoints, alongside a seamless transparent real-time chat translator overlay powered by Google Translate.**
+**An all-in-one in-game tactical suite for SCUM (Steam): an interactive island map with automatic GPS capture from chat, a sector grid (D0–Z4 / k1–k9), categorized waypoints, and a transparent real-time chat translator overlay.**
 
----
+🌐 **README languages:** **English** · more coming soon — [how to add yours](docs/readme/README.md)
 
-[🇬🇧 English Version](#-english-version) | [🇺🇦 Українська версія](#-українська-версія)
+[Quick start](#-quick-start-1-minute) · [Is it a virus?](#-windows-says-protected-your-pc--is-this-a-virus) · [Download](https://github.com/tankow79/scum-ui-translator-map/releases/latest)
 
 </div>
 
 ---
 
-# 🇬🇧 English Version
+## 🚀 Quick start (1 minute)
+
+1. Open the **[latest release](https://github.com/tankow79/scum-ui-translator-map/releases/latest)** and download **`SCUM_Chat_Translator.exe`** (or the `.zip` package, which contains the same exe plus instructions).
+2. Put the file into **any folder you like** (for example `C:\Games\SCUM_Translator\`). Do not run it from inside the zip: extract it first.
+3. **Double-click `SCUM_Chat_Translator.exe`.**
+4. The first time, Windows shows a blue/green **"Windows protected your PC"** window. **This is normal and expected**: follow the 3 clicks in the next section.
+5. A blue **`SC`** icon appears in the system tray (next to the clock). Done: the app is running.
+6. Start SCUM. The chat translator and the map (`Ctrl + M`) work automatically once the game window is in the foreground.
+7. Optional: right-click the tray icon → **Settings** to pick your translation language, hotkeys and overlay look.
+
+The app creates its own `config.json`, `points.json` and `profiles.json` next to the exe on first use. You do not need to download or copy them.
+
+---
+
+## 🛡️ Windows says "protected your PC" — is this a virus?
+
+<table>
+<tr>
+<td>
+
+### ✅ No. This is Windows SmartScreen, and it is normal for new free programs.
+
+**What you see:** *"Windows protected your PC. Microsoft Defender SmartScreen prevented an unrecognized app from starting."*
+
+**Why it appears:** SmartScreen warns about **every** program that is not signed with a paid commercial code-signing certificate and has not yet been downloaded by many people. This project is free, open source and unsigned, so Windows shows the warning for it. **It does not mean a virus was detected.**
+
+**Why it is safe:**
+- 🔓 **100 % open source.** Every line of code is in this repository. You can read it or build the exe yourself (see [Build from source](#-build-from-source)).
+- 🚫 **No injection, no memory editing, no hooks.** The app only reads SCUM's normal text log file and draws a separate transparent window.
+- 🔐 **Verifiable download.** GitHub shows a SHA-256 digest for every file on the release page; you can compare it with your download (`Get-FileHash .\SCUM_Chat_Translator.exe` in PowerShell).
+- 🌐 Network use is limited to Google Translate (chat text you choose to translate) and the GitHub Releases API (update check).
+
+</td>
+</tr>
+</table>
+
+### 🖱️ How to start the program anyway (3 clicks)
+
+<img src="docs/images/smartscreen-warning.png" alt="Windows SmartScreen warning with the More info link" width="420">
+
+*(Screenshot from a Ukrainian Windows. On English Windows the same window says "Windows protected your PC" with a **More info** link and a **Don't run** button.)*
+
+1. In the warning window click **"More info"** (Ukrainian Windows: **"Докладніше"**). The text link is under the description.
+2. A new button appears. Click **"Run anyway"** (Ukrainian Windows: **"Виконати все одно"**).
+3. The program starts. Windows remembers your choice for this file, so **you will not see the warning again.**
+
+> [!TIP]
+> **No "More info" link, or the file will not open at all?** Right-click the `.exe` → **Properties** → at the bottom of the *General* tab tick **Unblock** → **OK**, then start it again.
+
+> [!NOTE]
+> **An antivirus removed or blocked the file?** Add the folder with the exe to your antivirus exclusions and download the file again. New unsigned programs are sometimes flagged by heuristics; the source code is here to verify.
+
+> [!IMPORTANT]
+> Do **not** disable Windows Defender and do **not** install any "certificate" to run this app. Neither is needed. You only click **More info → Run anyway** once. Download the app only from **this repository's [Releases](https://github.com/tankow79/scum-ui-translator-map/releases)** page.
+
+---
 
 ## ⚠️ DISCLAIMER OF LIABILITY
 
@@ -95,6 +149,8 @@ Overcome language barriers on international SCUM servers without leaving the gam
 
 ---
 
+---
+
 ## 🌐 Core Feature 3: Language Support (i18n)
 
 * **Language tab in Settings:** Pick the interface language at any time. The app ships in English; every
@@ -124,10 +180,11 @@ Overcome language barriers on international SCUM servers without leaving the gam
 
 ---
 
-## 🛡️ Core Feature 6: Windows Autostart & SmartScreen Compliance
+## 🛡️ Core Feature 6: Windows Autostart
 
 * **Seamless Autostart:** Optional startup with Windows via `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (no admin rights required).
-* **SmartScreen Mitigation:** Binary contains embedded PE metadata and includes `install_cert.bat` to eliminate Windows Defender SmartScreen warnings.
+
+---
 
 ---
 
@@ -144,67 +201,49 @@ Overcome language barriers on international SCUM servers without leaving the gam
 
 ---
 
-## 🚀 Installation & Downloads
+---
 
-### Option 1: Pre-Built Standalone Release (Recommended for Players)
-No Python installation or configuration is needed.
+## 🔄 Updating
 
-1. Download the latest release archive (`SCUM_Chat_Translator_v2.0.0.zip` or standalone `.exe`) from **[GitHub Releases](https://github.com/tankow79/scum-ui-translator-map/releases)**.
-2. Extract the archive into any preferred folder on your PC (e.g. `C:\Games\SCUM_Translator\`).
-3. Ensure `config.json` and `assets/` reside alongside `SCUM_Chat_Translator.exe`.
-4. Run **`SCUM_Chat_Translator.exe`**.
-5. A blue **`SC`** icon will appear in your Windows System Tray (next to the clock).
-6. Launch SCUM — the tactical map and chat translator will automatically activate in-game!
+* When a new version is released, an amber `▲` appears on the tray icon and a notification pops up. Click it (or tray menu → **Update**) and press **Update now**: the app downloads, verifies and installs the new version, then restarts itself. Your settings, waypoints and profiles stay untouched.
+* You can also check manually: **Settings → Updates → Check for updates**.
+* Updating by hand is just as easy: download the new `.exe` and replace the old one. `config.json`, `points.json` and `profiles.json` live next to the exe and are kept.
+* Where files live: downloads go to `%LOCALAPPDATA%\SCUM_Chat_Translator\updates`, the log file to `%LOCALAPPDATA%\SCUM_Chat_Translator\logs\app.log`, chat history to `%LOCALAPPDATA%\SCUM_Chat_Translator\chat_history.jsonl`.
 
-### Option 2: Running from Source Code (For Developers)
+## 🧯 Troubleshooting
 
-#### 1. Prerequisites
-- **OS:** Windows 10 or Windows 11 (64-bit);
-- **Python:** 3.10, 3.11, 3.12, or 3.13;
-- **Git**.
-
-#### 2. Clone the Repository
-```bash
-git clone https://github.com/tankow79/scum-ui-translator-map.git
-cd scum-ui-translator-map
-```
-
-#### 3. Setup Virtual Environment
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-#### 4. Install Dependencies
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-#### 5. Launch
-```powershell
-python main.py
-```
-Or double-click:
-```cmd
-run.bat
-```
-
-#### 6. Run Test Suite
-```powershell
-pytest -v
-```
+| Problem | What to do |
+|---|---|
+| The program does not start / nothing happens | Look for the blue `SC` icon in the tray (click the `^` arrow). If another copy is running it is already there. See also the SmartScreen steps above. |
+| No chat translation in game | Check **Settings → General**: the log path must point to `SCUM.log`, and "Map only" mode must be off. Chat must be sent while the game is running. |
+| Overlay is not visible | Press `F8`. Run SCUM in **borderless / windowed** mode (exclusive fullscreen cannot show overlays). |
+| Update does not install | Make sure the exe is in a folder you can write to (not `Program Files`). Details are in `%LOCALAPPDATA%\SCUM_Chat_Translator\logs\app.log`. |
+| Something else | [Open an issue](https://github.com/tankow79/scum-ui-translator-map/issues/new/choose) and attach the log file (remove private data). |
 
 ---
 
-## 📦 Building Standalone `.exe` with PyInstaller
+## 🧑‍💻 Build from source
 
-To build your own single-file executable from source:
+Requirements: Windows 10/11 (64-bit), Python 3.10–3.13, Git.
+
 ```powershell
-pip install pyinstaller
-pyinstaller SCUM_Chat_Translator.spec
+git clone https://github.com/tankow79/scum-ui-translator-map.git
+cd scum-ui-translator-map
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+python main.py          # or double-click run.bat
 ```
-The compiled binary will be placed in `dist/SCUM_Chat_Translator.exe`.
+
+Checks and build:
+
+```powershell
+python -m ruff check .
+python -m pytest
+python -m PyInstaller --noconfirm SCUM_Chat_Translator.spec     # -> dist\SCUM_Chat_Translator.exe
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/ADDING_A_LANGUAGE.md](docs/ADDING_A_LANGUAGE.md).
 
 ---
 
@@ -257,218 +296,6 @@ The compiled binary will be placed in `dist/SCUM_Chat_Translator.exe`.
 
 ---
 
-# 🇺🇦 Українська версія
+## 📄 License
 
-## ⚠️ ВІДМОВА ВІД ВІДПОВІДАЛЬНОСТІ (DISCLAIMER)
-
-> [!WARNING]
-> **УВАГА: ВІДМОВА ВІД ВІДПОВІДАЛЬНОСТІ!**  
-> Даний програмний продукт створено виключно з пізнавальною, освітньою метою та для полегшення міжмовної комунікації гравців.  
-> **Автор / розробник проєкту НЕ несе жодної відповідальності** за використання даного скрипта, програми чи її модифікацій, а також за будь-які можливі прямі чи непрямі наслідки:  
-> - Блокування (бани) античітом Easy Anti-Cheat (EAC) або BattlEye;  
-> - Обмеження або блокування облікового запису Steam / SCUM;  
-> - Санкції з боку адміністраторів серверів або розробників гри Gamepires / Jagex;  
-> - Помилки, збої або втрату ігрових даних.  
-> 
-> **Ви використовуєте дане програмне забезпечення виключно на свій власний розсуд і ризик!**  
-> Програма НЕ здійснює ін'єкцій у пам'ять процесу гри (Memory Injection / DLL Hooking), а лише зчитує стандартний текстовий файл ігрового журналу (`%LOCALAPPDATA%\SCUM\Saved\Logs\SCUM.log`) та використовує стандартні функції Windows API для показу прозорого оверлею. Проте рішення про використання залишається на вашій відповідальності.
-
----
-
-## 🗺️ Ключова можливість 1: Інтерактивна тактична карта острова та координати
-
-Інтерактивна тактична карта виводить орієнтування на острові SCUM та координацію команди на новий рівень:
-
-### 📍 Можливості карти
-* **Швидкий виклик у грі (`Ctrl + M`):** Миттєво відкриває інтерактивну карту острова та панель збережених точок координат. Працює у грі та автоматично ховається при згортанні (Alt+Tab).
-* **Автономний запуск з трею:** Відкривайте та редагуйте тактичну карту та координати в будь-який момент без запущеної гри SCUM прямо з меню біля годинника!
-* **Безпечна вбудована палітра кольорів:** Вікно вибору кольору шпильки працює в режимі поверх екрана (`WindowStaysOnTopHint`), запобігаючи випадковому згортанню гри у повноекранному режимі.
-* **Два стилі відображення карти:** Швидке перемикання між **Супутниковою (Regular)** та **Тактичною** топографічною картою високої роздільної здатності.
-* **Офіційна координатна сітка SCUM:**
-  * Сектори: **від D0 до Z4**, математично точно прив'язані до світових координат Unreal Engine.
-  * Кейпади: підсітка **k1–k9** відповідно до стандартів гри та сервісу `scum-map.com`.
-  * Відображення ігрових координат, поточного сектора та кейпаду в реальному часі при наведенні курсору.
-* **Автоматичний перехоплювач координат із чату:**
-  * Автоматично розпізнає будь-які координати, надіслані гравцями в чат у форматі `{X=... Y=... Z=...|...}`.
-  * Витягує підпис мітки з тексту повідомлення перед або після координат.
-* **Розумне автовизначення категорій міток:**
-  * 🏠 **База** (`#a855f7`): база, дом, хата, base, camp;
-  * 🚗 **Машина** (`#f59e0b`): машина, авто, тачка, car, suv, truck, пікап;
-  * ✈️ **Літак** (`#0ea5e9`): літак, самолет, plane, авіа;
-  * 🏍️ **Мотоцикл** (`#f97316`): мото, мотоцикл, байк, bike;
-  * 🚤 **Лодка** (`#06b6d4`): лодка, човен, катер, boat, яхта;
-  * 📦 **Схрон / Лут** (`#10b981`): схрон, лут, ящик, cache, stash;
-  * 📍 **Мітка** (`#38bdf8`): звичайна точка інтересу.
-* **Зручна панель керування точками:**
-  * Візуальні шпильки (pins) із гострим вістрям точно на координатах.
-  * Вибір кольору шпильки в один клік (червоний, зелений, синій, золото, фіолетовий тощо).
-  * Редагування назви точки на льоту з миттєвим автозбереженням.
-  * Список гравців (жителів бази / загону).
-  * Пошук та фільтрація точок за назвою, сектором або нікнеймом гравця.
-  * Кнопка **«На карті»** — плавно центрує та наближає карту до вибраної мітки.
-  * Кнопка **«Копіювати»** — копіює повні координати в буфер обміну для надсилання в чат.
-  * Усі мітки надійно зберігаються у файлі `points.json` між сесіями.
-
----
-
-## 💬 Ключова можливість 2: Синхронний перекладач чату в реальному часі
-
-Зручне спілкування на міжнародних серверах без мовного бар'єру:
-
-### ⚡ Можливості перекладача
-* **Прозорий ігровий HUD-оверлей:** Відображає перекладені повідомлення поверх гри з налаштовуваною прозорістю фону та контрастною обводкою літер.
-* **Зелена підсвітка скваду (SCUM Green `#4ade80`):** Повідомлення від сокомандників (`[Squad]`, `(Team)`) автоматично підсвічуються яскравим фірмовим зеленим кольором гри.
-* **Точна поведінка оригінального чату SCUM:** Кожне повідомлення живе налаштований час (за замовчуванням 10 секунд) і плавно зникає.
-* **Синхронізація з клавішами `T` та `Escape`:**
-  * Натискання **`T`** у грі відкриває чат SCUM, розкриває історію повідомлень та активує вікно швидкого введення.
-  * Натискання **`Escape`** миттєво ховає оверлей і вікно вводу, повертаючи фокус та керування мишкою безпосередньо у гру без затримок.
-* **Плавне введення тексту (0ms Lag):**
-  * Повністю асинхронний живий переклад у фоновому потоці — жодних підвисань при швидкому наборі тексту.
-  * Натискання **`Enter`** автоматично копіює переклад у буфер обміну ➔ вставляйте `Ctrl+V` у гру!
-* **Понад 100 мов:** Підтримка Google Translate для будь-яких мовних пар.
-* **Миттєвий чорний список (Blacklist):** Повідомлення від заблокованих гравців не відправляються на переклад і показуються мовою оригіналу без затримок.
-* **Режим «Тільки Карта»:** Можливість повністю вимкнути HUD-перекладач та зупинити читання логу SCUM.log (0% навантаження на диск і CPU).
-* **Індикатор статусу NVIDIA-style:** Зелений `[● ON]` / червоний `[● OFF]` значок у кутку екрана.
-
----
-
-## 🌐 Ключова можливість 3: Мови інтерфейсу (i18n)
-
-* **Вкладка «Language» у налаштуваннях:** мову інтерфейсу можна змінити будь-коли. Програма постачається англійською; кожен файл `assets/locales/<код>.json` підхоплюється автоматично, тож додати мову можна без змін у коді ([docs/ADDING_A_LANGUAGE.md](docs/ADDING_A_LANGUAGE.md)). Відсутні ключі беруться з англійської.
-* **Переклад чату** працює для 100+ мов незалежно від мови інтерфейсу.
-
----
-
-## 🔄 Ключова можливість 4: Автооновлення в 1 клік та збереження даних
-
-* **Сповіщення в треї:** помаранчевий значок `▲` з'являється, коли на GitHub виходить новий реліз; програма також перевіряє оновлення у фоні.
-* **Вікно оновлення в стилі Steam:** компактна смуга прогресу зі швидкістю та залишком часу, «Скасувати» / «Повторити», нотатки релізу за запитом.
-* **Справжнє оновлення в один клік:** збірка завантажується до `%LOCALAPPDATA%\SCUM_Chat_Translator\updates`, перевіряється (розмір, заголовок, SHA-256), підміняється на місці з автоматичним відкатом, після чого програма перезапускається. Звичайна / Portable збірка визначається автоматично.
-* **100% збереження даних:** `config.json`, `points.json` та `profiles.json` ніколи не перезаписуються.
-
----
-
-## 🧰 Ключова можливість 5: Інструменти чату (історія, фільтри, профілі)
-
-* **Історія чату** (меню трею): пошук, фільтри за гравцем / типом / лише перекладені, експорт у TXT, CSV або JSON.
-* **Заборонені слова:** маскування, приховування повідомлення або показ без перекладу.
-* **Автовизначення мови:** пропускає переклад, якщо повідомлення вже вашою мовою (або мовами зі списку).
-* **Профілі налаштувань** з перемиканням у налаштуваннях або в треї.
-* **Імпорт / експорт точок** (JSON) зі злиттям або заміною.
-* Кожна функція має власний перемикач у налаштуваннях.
-
----
-
-## 🛡️ Ключова можливість 6: Автозапуск та захист від SmartScreen
-
-* **Автозапуск Windows:** Безпечний запуск разом із системою через гілку `HKCU` без прав адміністратора.
-* **Усунення синього вікна SmartScreen:** Інтегровано скрипт `install_cert.bat` для додавання локального сертифіката довіри в один клік.
-
----
-
-## ⌨️ Керування та гарячі клавіші
-
-| Клавіша | Дія у грі |
-|:---:|:---|
-| **`Ctrl + M`** | Відкрити / сховати інтерактивну Карту SCUM та список збережених точок координат. |
-| **`T`** | Відкрити чат у SCUM + відкрити поле швидкого перекладу та розгорнути історію. |
-| **`Enter`** | Скопіювати перекладений текст у буфер обміну ➔ закрити вікно перекладу ➔ вставити `Ctrl+V` у гру. |
-| **`Escape`** | Миттєво закрити вікно перекладу, карту чи налаштування та без затримок повернути мишку в гру. |
-| **`F8`** | Показати / Приховати оверлей чату (індикатор показує зелений або червоний стан). |
-| **`F9`** | Режим налаштування (Розблокувати / Зафіксувати): перетягування оверлею мишкою, зміна розміру, тест. |
-
----
-
-## 🚀 Встановлення та запуск
-
-### Спосіб 1: Готовий реліз (Рекомендовано для гравців)
-Встановлювати Python не потрібно.
-
-1. Завантажте готовий реліз (`SCUM_Chat_Translator_v2.0.0.zip` або `.exe`) зі сторінки **[GitHub Releases](https://github.com/tankow79/scum-ui-translator-map/releases)**.
-2. Розпакуйте вміст архіву у будь-яку зручну папку на диску (наприклад, `C:\Games\SCUM_Translator\`).
-3. Переконайтеся, що поруч із `SCUM_Chat_Translator.exe` знаходяться файли `config.json` та папка `assets/`.
-4. Запустіть **`SCUM_Chat_Translator.exe`**.
-5. У системному треї біля годинника з'явиться синій значок **`SC`**.
-6. Запустіть SCUM — оверлей та карта активуються автоматично!
-
-### Спосіб 2: Встановлення з вихідного коду (Для розробників)
-
-```powershell
-# Клонування репозиторію
-git clone https://github.com/tankow79/scum-ui-translator-map.git
-cd scum-ui-translator-map
-
-# Створення та активація віртуального середовища
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# Встановлення залежностей
-pip install -r requirements.txt
-
-# Запуск
-python main.py
-
-# Тестування
-pytest -v
-```
-
----
-
-## 📦 Збірка автономного `.exe` через PyInstaller
-
-```powershell
-pip install pyinstaller
-pyinstaller SCUM_Chat_Translator.spec
-```
-Готовий виконуваний файл з'явиться в папці `dist/SCUM_Chat_Translator.exe`.
-
----
-
-## ⚙️ Таблиця параметрів налаштування (`config.json`)
-
-| Параметр | Тип | За замовчуванням | Опис |
-|---|:---:|:---:|---|
-| `log_file_path` | string | `%LOCALAPPDATA%\SCUM\...` | Шлях до журналу SCUM.log (підтримує змінні оточення Windows). |
-| `target_language` | string | `"uk"` | Мова перекладу вхідного чату SCUM. |
-| `source_language` | string | `"auto"` | Мова оригіналу повідомлень (`auto` для автовизначення). |
-| `outgoing_my_lang` | string | `"uk"` | Ваша рідна мова для швидкого вводу через Quick Chat (`T`). |
-| `outgoing_target_lang` | string | `"en"` | Мова, на яку перекладатиметься ваш текст для відправки в гру. |
-| `message_fade_timeout` | int | `10` | Час показу повідомлення на екрані у секундах (0 = ніколи не ховати). |
-| `font_size` | int | `18` | Розмір шрифту оверлею. |
-| `font_bold` | bool | `true` | Жирний шрифт для підвищення читабельності на тлі гри. |
-| `text_outline` | bool | `true` | Контрастна чорна обводка навколо тексту. |
-| `bg_opacity` | float | `0.0` | Прозорість фонової підкладки оверлею (0.0 = повністю прозорий). |
-| `own_nickname` | string | `""` | Ваш нікнейм у грі (для розпізнавання власних повідомлень). |
-| `ignore_own_messages` | bool | `false` | Ігнорувати переклад власних повідомлень. |
-| `blacklist_nicknames` | list | `[]` | Список нікнеймів для показу без затримок мовою оригіналу. |
-| `hotkey_toggle_map` | string | `"Ctrl+M"` | Гаряча клавіша відкриття тактичної карти та списку точок. |
-| `hotkey_quick_chat` | string | `"T"` | Гаряча клавіша відкриття чату та вікна швидкого перекладу. |
-| `hotkey_toggle_visibility`| string | `"F8"` | Гаряча клавіша приховування / показу оверлею. |
-| `hotkey_toggle_lock` | string | `"F9"` | Режим розблокування оверлею для зміни положення мишкою. |
-| `map_variant` | string | `"regular"` | Стиль карти (`regular` — супутникова, `tactical` — тактична). |
-| `map_show_grid` | bool | `true` | Відображення координатної сітки секторів D0..Z4. |
-| `map_show_keypads` | bool | `true` | Відображення підсітки кейпадів k1..k9. |
-| `auto_focus_new_point` | bool | `true` | Автоматичне фокусування карти на нових координатах із чату. |
-| `enable_chat_translator`| bool | `true` | Увімкнення перекладача чату (вимкніть для режиму «Тільки Карта»). |
-| `ui_language` | string | `"en"` | Код мови інтерфейсу (будь-який файл у `assets/locales/`). |
-| `auto_start` | bool | `true` | Безпечний автозапуск програми разом із Windows. |
-| `auto_check_updates` | bool | `true` | Автоматична фонова перевірка оновлень при запуску. |
-| `update_check_interval_hours` | int | `6` | Background update re-check interval (`0` = only at startup). |
-| `blacklist_words_enabled` | bool | `false` | Enable the blocked-word filter. |
-| `blacklist_words` | list | `[]` | Blocked words / phrases. |
-| `blacklist_words_action` | string | `"mask"` | `mask`, `hide` or `no_translate`. |
-| `blacklist_words_whole_word` | bool | `true` | Match whole words only. |
-| `blacklist_words_case_sensitive` | bool | `false` | Case-sensitive matching. |
-| `autodetect_enabled` | bool | `true` | Skip translation for messages already in an excluded language. |
-| `autodetect_skip_target_language` | bool | `true` | Treat your target language as "no translation needed". |
-| `autodetect_skip_languages` | list | `[]` | Extra language codes to skip. |
-| `autodetect_min_length` | int | `3` | Minimum letters before detection is attempted. |
-| `history_enabled` | bool | `true` | Record chat history. |
-| `history_save_to_disk` | bool | `true` | Keep history between sessions. |
-| `history_max_entries` | int | `5000` | Maximum stored messages. |
-
----
-
-## 📄 Ліцензія
-
-Проєкт поширюється під відкритою ліцензією [MIT](LICENSE).
+[MIT](LICENSE). Changes between versions: [CHANGELOG.md](CHANGELOG.md).

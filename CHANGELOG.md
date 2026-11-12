@@ -8,6 +8,9 @@ All notable changes to this project are documented here. Format based on
 ### Added
 - Releases now include a full `.zip` package (exe + certificate installer + instructions) next to the standalone `.exe` files.
 
+- README rewritten: step-by-step quick start, SmartScreen ("Windows protected your PC") explanation, troubleshooting; README translations are organised in `docs/readme/`.
+- The zip no longer ships the self-signed certificate installer (the CI-built exe is not signed with it, and adding a root certificate is not recommended).
+
 All 2.1.0 changes below ship in this release.
 
 ## [2.1.0]
