@@ -34,7 +34,7 @@ jobs:
           $dir = "pkg/SCUM_Chat_Translator"
           New-Item -ItemType Directory -Force $dir | Out-Null
           Copy-Item dist/SCUM_Chat_Translator.exe $dir
-          Copy-Item docs/instructions/INSTRUCTION_UA.txt, docs/instructions/INSTRUCTION_EN.txt $dir
+          Copy-Item docs/instructions/INSTRUCTION_EN.txt $dir
           Compress-Archive -Path "$dir/*" -DestinationPath "dist/SCUM_Chat_Translator_${{ github.ref_name }}.zip"
       - name: Attach to release
         uses: softprops/action-gh-release@v2
