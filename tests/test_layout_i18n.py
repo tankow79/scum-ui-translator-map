@@ -92,3 +92,23 @@ def test_other_windows_do_not_clip_buttons(qapp, cfg, tmp_path, verbose_language
         qapp.processEvents()
         assert not clipped_buttons(w), f"{type(w).__name__}: {clipped_buttons(w)}"
         w.close()
+
+
+def test_ukrainian_interface_has_no_clipped_buttons(qapp, cfg, tmp_path):
+    from ui.settings_window import SettingsDialog
+
+    mgr = LocalizationManager.get_instance()
+    previous = mgr.current_locale
+    assert mgr.set_locale("uk")
+    try:
+        dlg = SettingsDialog(cfg, profiles=ProfileManager(cfg, str(tmp_path / "p.json")))
+        dlg.show()
+        for row in range(dlg.nav.count()):
+            dlg.nav.setCurrentRow(row)
+            qapp.processEvents()
+            page = dlg.stack.currentWidget()
+            assert page.widget().width() <= page.viewport().width() + 1
+            assert not clipped_buttons(page)
+        dlg.close()
+    finally:
+        mgr.set_locale(previous)

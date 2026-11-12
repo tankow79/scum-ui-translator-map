@@ -1,6 +1,76 @@
-<!-- Archived Ukrainian README (v2.0.0 era). Use it as a base for docs/readme/README.uk.md. -->
+<div align="center">
 
-# 🇺🇦 Українська версія
+# 🗺️ SCUM Tactical Map & Real-Time Chat Translator 💬
+
+[![Release](https://img.shields.io/github/v/release/tankow79/scum-ui-translator-map?style=for-the-badge&color=blue)](https://github.com/tankow79/scum-ui-translator-map/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/tankow79/scum-ui-translator-map/total?style=for-the-badge&color=success)](https://github.com/tankow79/scum-ui-translator-map/releases)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6.svg?style=for-the-badge&logo=windows)](https://microsoft.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](../../LICENSE)
+
+**Тактичний набір для SCUM (Steam): інтерактивна карта острова з автоматичним збором GPS-координат із чату, сітка секторів (D0–Z4 / k1–k9), категорії міток і прозорий оверлей перекладу чату в реальному часі.**
+
+🌐 **Мови README:** [English](../../README.md) · **Українська**
+
+[Швидкий старт](#-швидкий-старт-1-хвилина) · [Це вірус?](#-windows-пише-захистила-цей-пк--це-вірус) · [Завантажити](https://github.com/tankow79/scum-ui-translator-map/releases/latest)
+
+</div>
+
+---
+
+## 🚀 Швидкий старт (1 хвилина)
+
+1. Відкрийте **[останній реліз](https://github.com/tankow79/scum-ui-translator-map/releases/latest)** і завантажте **`SCUM_Chat_Translator.exe`** (або `.zip`: у ньому той самий exe та інструкція).
+2. Покладіть файл у **будь-яку папку** (наприклад `C:\Games\SCUM_Translator\`). Не запускайте його всередині архіву: спершу розпакуйте.
+3. **Двічі клацніть `SCUM_Chat_Translator.exe`.**
+4. Перший раз Windows покаже синє/зелене вікно **«ОС Windows захистила цей ПК»**. **Це нормально й очікувано**: виконайте 3 кліки з наступного розділу.
+5. Біля годинника (у треї) з'явиться синя іконка **`SC`**. Готово: програма працює.
+6. Запустіть SCUM. Переклад чату та карта (`Ctrl + M`) працюють автоматично, щойно вікно гри на передньому плані.
+7. Необов'язково: клацніть правою кнопкою на іконці в треї → **Settings** (Налаштування). Там можна обрати мову перекладу, гарячі клавіші та вигляд оверлея. **Мову інтерфейсу (English / Українська)** змінюють у **Settings → General → Language**.
+
+Програма сама створює `config.json`, `points.json` і `profiles.json` поруч з exe при першому використанні. Завантажувати чи копіювати їх не потрібно.
+
+---
+
+## 🛡️ Windows пише «захистила цей ПК» — це вірус?
+
+<table>
+<tr>
+<td>
+
+### ✅ Ні. Це Windows SmartScreen, і це нормально для нових безкоштовних програм.
+
+**Що ви бачите:** *«ОС Windows захистила цей ПК. Фільтр SmartScreen для Microsoft Defender запобіг запуску нерозпізнаної програми.»*
+
+**Чому це з'являється:** SmartScreen попереджає про **кожну** програму, яка не підписана платним комерційним сертифікатом розробника й ще не завантажена великою кількістю людей. Цей проєкт безкоштовний, з відкритим кодом і без підпису, тому Windows показує попередження. **Це не означає, що знайдено вірус.**
+
+**Чому це безпечно:**
+- 🔓 **100 % відкритий код.** Кожен рядок коду лежить у цьому репозиторії. Його можна прочитати або зібрати exe самостійно (див. [Збірка з коду](#-збірка-з-вихідного-коду)).
+- 🚫 **Жодних ін'єкцій, редагування пам'яті чи хуків.** Програма лише читає звичайний текстовий журнал SCUM і малює окреме прозоре вікно.
+- 🔐 **Перевірене завантаження.** GitHub показує SHA-256 кожного файлу на сторінці релізу; його можна порівняти зі своїм (`Get-FileHash .\SCUM_Chat_Translator.exe` у PowerShell).
+- 🌐 Мережа використовується лише для Google Translate (текст чату, який ви перекладаєте) та GitHub Releases API (перевірка оновлень).
+
+</td>
+</tr>
+</table>
+
+### 🖱️ Як усе одно запустити програму (3 кліки)
+
+<img src="../images/smartscreen-warning.png" alt="Попередження Windows SmartScreen з посиланням Докладніше" width="420">
+
+1. У вікні попередження натисніть **«Докладніше»** (в англійській Windows: **More info**). Це текстове посилання під описом.
+2. З'явиться нова кнопка. Натисніть **«Виконати все одно»** (англійською: **Run anyway**).
+3. Програма запуститься. Windows запам'ятає ваш вибір для цього файлу, тож **попередження більше не повториться.**
+
+> [!TIP]
+> **Немає посилання «Докладніше» або файл взагалі не відкривається?** Клацніть exe правою кнопкою → **Властивості** → внизу вкладки *Загальні* поставте галочку **Розблокувати** → **OK**, потім запустіть знову.
+
+> [!NOTE]
+> **Антивірус видалив або заблокував файл?** Додайте папку з exe до винятків антивіруса й завантажте файл знову. Нові непідписані програми іноді спрацьовують на евристику; вихідний код відкритий для перевірки.
+
+> [!IMPORTANT]
+> **Не** вимикайте Windows Defender і **не** встановлюйте жодних «сертифікатів», щоб запустити цю програму. Ні те, ні інше не потрібне. Достатньо один раз натиснути **Докладніше → Виконати все одно**. Завантажуйте програму лише зі сторінки **[Releases](https://github.com/tankow79/scum-ui-translator-map/releases)** цього репозиторію.
+
+---
 
 ## ⚠️ ВІДМОВА ВІД ВІДПОВІДАЛЬНОСТІ (DISCLAIMER)
 
@@ -77,7 +147,7 @@
 
 ## 🌐 Ключова можливість 3: Мови інтерфейсу (i18n)
 
-* **Вкладка «Language» у налаштуваннях:** мову інтерфейсу можна змінити будь-коли. Програма постачається англійською; кожен файл `assets/locales/<код>.json` підхоплюється автоматично, тож додати мову можна без змін у коді ([docs/ADDING_A_LANGUAGE.md](docs/ADDING_A_LANGUAGE.md)). Відсутні ключі беруться з англійської.
+* **Вкладка «Language» у налаштуваннях:** мову інтерфейсу можна змінити будь-коли. Програма постачається англійською та українською; кожен файл `assets/locales/<код>.json` підхоплюється автоматично, тож додати мову можна без змін у коді ([docs/ADDING_A_LANGUAGE.md](../ADDING_A_LANGUAGE.md)). Відсутні ключі беруться з англійської.
 * **Переклад чату** працює для 100+ мов незалежно від мови інтерфейсу.
 
 ---
@@ -102,10 +172,9 @@
 
 ---
 
-## 🛡️ Ключова можливість 6: Автозапуск та захист від SmartScreen
+## 🛡️ Ключова можливість 6: Автозапуск Windows
 
-* **Автозапуск Windows:** Безпечний запуск разом із системою через гілку `HKCU` без прав адміністратора.
-* **Усунення синього вікна SmartScreen:** Інтегровано скрипт `install_cert.bat` для додавання локального сертифіката довіри в один клік.
+* **Зручний автозапуск:** необов'язковий запуск разом з Windows через `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (права адміністратора не потрібні).
 
 ---
 
@@ -122,48 +191,48 @@
 
 ---
 
-## 🚀 Встановлення та запуск
+## 🔄 Оновлення
 
-### Спосіб 1: Готовий реліз (Рекомендовано для гравців)
-Встановлювати Python не потрібно.
+* Коли виходить нова версія, на іконці в треї з'являється помаранчевий `▲` і спливає сповіщення. Клацніть його (або меню трею → **Update**) і натисніть **«Оновити зараз»**: програма завантажить, перевірить і встановить нову версію та сама перезапуститься. Налаштування, мітки й профілі не зачіпаються.
+* Перевірити вручну: **Settings → General → Updates → Check for updates**.
+* Оновити вручну так само просто: завантажте новий `.exe` і замініть старий. `config.json`, `points.json` і `profiles.json` лежать поруч з exe і зберігаються.
+* Де що лежить: завантаження оновлень у `%LOCALAPPDATA%\SCUM_Chat_Translator\updates`, журнал у `%LOCALAPPDATA%\SCUM_Chat_Translator\logs\app.log`, історія чату в `%LOCALAPPDATA%\SCUM_Chat_Translator\chat_history.jsonl`.
+* Перед оновленням програма робить перевірену резервну копію ваших файлів; після успішного запуску копія видаляється сама. Якщо файл зник або пошкодився, його буде відновлено.
 
-1. Завантажте готовий реліз (`SCUM_Chat_Translator_v2.0.0.zip` або `.exe`) зі сторінки **[GitHub Releases](https://github.com/tankow79/scum-ui-translator-map/releases)**.
-2. Розпакуйте вміст архіву у будь-яку зручну папку на диску (наприклад, `C:\Games\SCUM_Translator\`).
-3. Переконайтеся, що поруч із `SCUM_Chat_Translator.exe` знаходяться файли `config.json` та папка `assets/`.
-4. Запустіть **`SCUM_Chat_Translator.exe`**.
-5. У системному треї біля годинника з'явиться синій значок **`SC`**.
-6. Запустіть SCUM — оверлей та карта активуються автоматично!
+## 🧯 Вирішення проблем
 
-### Спосіб 2: Встановлення з вихідного коду (Для розробників)
-
-```powershell
-# Клонування репозиторію
-git clone https://github.com/tankow79/scum-ui-translator-map.git
-cd scum-ui-translator-map
-
-# Створення та активація віртуального середовища
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# Встановлення залежностей
-pip install -r requirements.txt
-
-# Запуск
-python main.py
-
-# Тестування
-pytest -v
-```
+| Проблема | Що робити |
+|---|---|
+| Програма не запускається / нічого не відбувається | Пошукайте синю іконку `SC` у треї (стрілка `^`). Якщо вже запущена інша копія, іконка вже там. Також дивіться кроки SmartScreen вище. |
+| Немає перекладу чату в грі | У **Settings → Chat** перевірте мову перекладу; у **Settings → General** шлях має вказувати на `SCUM.log`, а режим «тільки карта» має бути вимкнений. |
+| Оверлей не видно | Натисніть `F8`. Запускайте SCUM у режимі **вікно без рамки / віконному** (ексклюзивний повний екран не показує оверлеї). |
+| Оновлення не встановлюється | Exe має лежати в папці, куди можна писати (не `Program Files`). Подробиці в `%LOCALAPPDATA%\SCUM_Chat_Translator\logs\app.log`. |
+| Щось інше | [Створіть issue](https://github.com/tankow79/scum-ui-translator-map/issues/new/choose) і додайте журнал (приберіть приватні дані). |
 
 ---
 
-## 📦 Збірка автономного `.exe` через PyInstaller
+## 🧑‍💻 Збірка з вихідного коду
+
+Потрібно: Windows 10/11 (64-bit), Python 3.10–3.13, Git.
 
 ```powershell
-pip install pyinstaller
-pyinstaller SCUM_Chat_Translator.spec
+git clone https://github.com/tankow79/scum-ui-translator-map.git
+cd scum-ui-translator-map
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+python main.py          # або двічі клацніть run.bat
 ```
-Готовий виконуваний файл з'явиться в папці `dist/SCUM_Chat_Translator.exe`.
+
+Перевірки та збірка:
+
+```powershell
+python -m ruff check .
+python -m pytest
+python -m PyInstaller --noconfirm SCUM_Chat_Translator.spec     # -> dist\SCUM_Chat_Translator.exe
+```
+
+Дивіться [CONTRIBUTING.md](../../CONTRIBUTING.md), [docs/ARCHITECTURE.md](../ARCHITECTURE.md) та [docs/ADDING_A_LANGUAGE.md](../ADDING_A_LANGUAGE.md).
 
 ---
 
@@ -196,22 +265,22 @@ pyinstaller SCUM_Chat_Translator.spec
 | `ui_language` | string | `"en"` | Код мови інтерфейсу (будь-який файл у `assets/locales/`). |
 | `auto_start` | bool | `true` | Безпечний автозапуск програми разом із Windows. |
 | `auto_check_updates` | bool | `true` | Автоматична фонова перевірка оновлень при запуску. |
-| `update_check_interval_hours` | int | `6` | Background update re-check interval (`0` = only at startup). |
-| `blacklist_words_enabled` | bool | `false` | Enable the blocked-word filter. |
-| `blacklist_words` | list | `[]` | Blocked words / phrases. |
-| `blacklist_words_action` | string | `"mask"` | `mask`, `hide` or `no_translate`. |
-| `blacklist_words_whole_word` | bool | `true` | Match whole words only. |
-| `blacklist_words_case_sensitive` | bool | `false` | Case-sensitive matching. |
-| `autodetect_enabled` | bool | `true` | Skip translation for messages already in an excluded language. |
-| `autodetect_skip_target_language` | bool | `true` | Treat your target language as "no translation needed". |
-| `autodetect_skip_languages` | list | `[]` | Extra language codes to skip. |
-| `autodetect_min_length` | int | `3` | Minimum letters before detection is attempted. |
-| `history_enabled` | bool | `true` | Record chat history. |
-| `history_save_to_disk` | bool | `true` | Keep history between sessions. |
-| `history_max_entries` | int | `5000` | Maximum stored messages. |
+| `update_check_interval_hours` | int | `6` | Інтервал фонової перевірки оновлень у годинах (`0` = лише при запуску). |
+| `blacklist_words_enabled` | bool | `false` | Увімкнути фільтр заборонених слів. |
+| `blacklist_words` | list | `[]` | Заборонені слова / фрази. |
+| `blacklist_words_action` | string | `"mask"` | `mask` (замінити на ***), `hide` (приховати) або `no_translate` (без перекладу). |
+| `blacklist_words_whole_word` | bool | `true` | Лише цілі слова. |
+| `blacklist_words_case_sensitive` | bool | `false` | Враховувати регістр. |
+| `autodetect_enabled` | bool | `true` | Не перекладати повідомлення, що вже написані непотрібною вам мовою. |
+| `autodetect_skip_target_language` | bool | `true` | Вважати вашу мову перекладу такою, що не потребує перекладу. |
+| `autodetect_skip_languages` | list | `[]` | Додаткові коди мов для пропуску. |
+| `autodetect_min_length` | int | `3` | Мінімум літер, щоб спробувати визначити мову. |
+| `history_enabled` | bool | `true` | Записувати історію чату. |
+| `history_save_to_disk` | bool | `true` | Зберігати історію між сеансами. |
+| `history_max_entries` | int | `5000` | Максимум збережених повідомлень. |
 
 ---
 
 ## 📄 Ліцензія
 
-Проєкт поширюється під відкритою ліцензією [MIT](LICENSE).
+[MIT](../../LICENSE). Зміни між версіями: [CHANGELOG.md](../../CHANGELOG.md).

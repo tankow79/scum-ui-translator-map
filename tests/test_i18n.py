@@ -46,12 +46,31 @@ def test_unknown_initial_locale_falls_back_to_english(tmp_path):
     assert mgr.current_locale == FALLBACK_LOCALE
 
 
-def test_shipped_english_locale_is_complete_and_valid():
+def test_shipped_locales_are_complete_and_placeholders_match():
+    import re
+
+    def flat(d, prefix=""):
+        for k, v in d.items():
+            if k.startswith("_"):
+                continue
+            cur = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, dict):
+                yield from flat(v, cur)
+            else:
+                yield cur, v
+
     mgr = LocalizationManager()
-    en = mgr.translations["en"]
-    assert en["_meta"]["name"] == "English"
-    assert len(_keys(en)) > 150
-    # every shipped locale must define exactly the English keys (extra locales are checked here automatically)
-    en_keys = set(_keys(en))
+    en = dict(flat(mgr.translations["en"]))
+    assert mgr.translations["en"]["_meta"]["name"] == "English" and len(en) > 150
+    assert "uk" in mgr.translations and mgr.translations["uk"]["_meta"]["name"] == "Українська"
+
+    def placeholders(text):
+        return set(re.findall(r"\{(\w+)\}", text))
+
     for code, data in mgr.translations.items():
-        assert set(_keys(data)) <= en_keys, f"{code} has keys that English lacks"
+        if code in ("en", "ru"):   # ru is not a shipped locale
+            continue
+        loc = dict(flat(data))
+        assert set(loc) == set(en), f"{code}: missing {set(en) - set(loc)} extra {set(loc) - set(en)}"
+        for key, text in loc.items():
+            assert placeholders(text) == placeholders(en[key]), f"{code}:{key} placeholders differ"

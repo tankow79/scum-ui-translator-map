@@ -8,6 +8,7 @@ The main [README.md](../../README.md) is the English master. Translations live h
 | Language | File |
 |---|---|
 | English | [README.md](../../README.md) (master) |
+| Українська | [README.uk.md](README.uk.md) |
 
 ## Adding a translation
 
@@ -17,8 +18,5 @@ The main [README.md](../../README.md) is the English master. Translations live h
 3. Add a row to the table above and add the language name to the **README languages** line near the top of the
    root `README.md`.
 4. Keep the SmartScreen section: it is the most important part for new users.
-
-An older Ukrainian README is kept in [`docs/locales_archive/README.uk.old.md`](../locales_archive/README.uk.old.md)
-as a starting point (it predates v2.1; sections on history, filters, profiles and the new updater are missing).
 
 The application interface itself is translated separately, see [ADDING_A_LANGUAGE.md](../ADDING_A_LANGUAGE.md).

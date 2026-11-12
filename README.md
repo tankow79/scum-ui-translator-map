@@ -10,7 +10,7 @@
 
 **An all-in-one in-game tactical suite for SCUM (Steam): an interactive island map with automatic GPS capture from chat, a sector grid (D0–Z4 / k1–k9), categorized waypoints, and a transparent real-time chat translator overlay.**
 
-🌐 **README languages:** **English** · more coming soon — [how to add yours](docs/readme/README.md)
+🌐 **README languages:** **English** · [Українська](docs/readme/README.uk.md) · [add yours](docs/readme/README.md)
 
 [Quick start](#-quick-start-1-minute) · [Is it a virus?](#-windows-says-protected-your-pc--is-this-a-virus) · [Download](https://github.com/tankow79/scum-ui-translator-map/releases/latest)
 
@@ -26,7 +26,7 @@
 4. The first time, Windows shows a blue/green **"Windows protected your PC"** window. **This is normal and expected**: follow the 3 clicks in the next section.
 5. A blue **`SC`** icon appears in the system tray (next to the clock). Done: the app is running.
 6. Start SCUM. The chat translator and the map (`Ctrl + M`) work automatically once the game window is in the foreground.
-7. Optional: right-click the tray icon → **Settings** to pick your translation language, hotkeys and overlay look.
+7. Optional: right-click the tray icon → **Settings** to pick your translation language, hotkeys and overlay look. The **interface language (English / Українська)** is under **Settings → General → Language**.
 
 The app creates its own `config.json`, `points.json` and `profiles.json` next to the exe on first use. You do not need to download or copy them.
 
