@@ -15,5 +15,7 @@ Languages are discovered automatically; no code changes are needed.
 Missing keys fall back to English, so a partial translation works. `python -m pytest tests/test_i18n.py` checks that
 a locale does not contain keys unknown to English.
 
-Earlier Ukrainian and Russian translations are kept in `docs/locales_archive/` as a starting point (they predate the
-2.1.0 keys, so some texts will be missing and fall back to English).
+Shipped languages: English (`en.json`, the reference) and Ukrainian (`uk.json`). A Russian translation from v2.0.0
+is archived in `docs/locales_archive/ru.json` (it predates the 2.1 keys, so missing texts fall back to English).
+
+Also translate the README if you can: see [readme/README.md](readme/README.md).
