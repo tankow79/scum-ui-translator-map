@@ -1,0 +1,37 @@
+name: Build release binaries
+
+# Pushing a tag such as v2.1.0 builds both executables and attaches them (with SHA-256 digests shown by
+# GitHub) to the release of that tag. Create/publish the release itself manually on GitHub.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest
+      - name: Build executables
+        run: |
+          python -m PyInstaller --noconfirm SCUM_Chat_Translator.spec
+          python -m PyInstaller --noconfirm SCUM_Chat_Translator_Portable.spec
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            dist/SCUM_Chat_Translator.exe
+            dist/SCUM_Chat_Translator_Portable.exe

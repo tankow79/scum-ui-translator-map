@@ -1,6 +1,7 @@
 import os
-import pytest
-from core.config_manager import ConfigManager, DEFAULT_CONFIG
+
+from core.config_manager import ConfigManager
+
 
 def test_config_defaults(tmp_path):
     cfg_file = tmp_path / "test_config.json"

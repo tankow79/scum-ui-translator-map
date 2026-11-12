@@ -6,7 +6,7 @@
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg?style=for-the-badge&logo=python)](https://www.python.org/)
 [![GUI Framework](https://img.shields.io/badge/PyQt-6.6%2B-green.svg?style=for-the-badge&logo=qt)](https://www.riverbankcomputing.com/software/pyqt/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6.svg?style=for-the-badge&logo=windows)](https://microsoft.com)
-[![Tests](https://img.shields.io/badge/Tests-52%20Passed-brightgreen.svg?style=for-the-badge)](https://pytest.org/)
+[![CI](https://img.shields.io/github/actions/workflow/status/tankow79/scum-ui-translator-map/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/tankow79/scum-ui-translator-map/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
 **An all-in-one in-game tactical suite for SCUM (Steam): high-precision interactive tactical island map with automatic GPS coordinate interception, sector grid (D0–Z4 / k1–k9), categorized waypoints, alongside a seamless transparent real-time chat translator overlay powered by Google Translate.**
@@ -95,25 +95,36 @@ Overcome language barriers on international SCUM servers without leaving the gam
 
 ---
 
-## 🌐 Core Feature 3: Multi-Language Architecture (i18n)
+## 🌐 Core Feature 3: Language Support (i18n)
 
-* **3 Interface Languages:** Switch the entire interface on the fly without restarting:
-  * 🇺🇦 **Українська** (Ukrainian)
-  * 🇬🇧 **English** (English)
-  * 🇷🇺 **Русский** (Russian)
-* **Modular Localization:** Managed via clean external dictionaries in `assets/locales/` with automated fallback.
+* **Language tab in Settings:** Pick the interface language at any time. The app ships in English; every
+  `assets/locales/<code>.json` file is discovered automatically, so adding a language needs no code changes
+  (see [docs/ADDING_A_LANGUAGE.md](docs/ADDING_A_LANGUAGE.md)). Missing keys fall back to English.
+* **Chat translation** supports 100+ languages independently of the interface language.
 
 ---
 
 ## 🔄 Core Feature 4: 1-Click Auto-Update & 100% Data Preservation
 
-* **Tray Update Notification Badge:** A bright amber update badge `▲` appears on the tray icon when a new version is released on GitHub.
-* **One-Click Update:** Check and apply updates directly from the system tray menu or settings dialog.
-* **Strict User Data Protection:** Your `config.json` (custom hotkeys, positions, languages) and `points.json` (saved coordinates) are **strictly preserved and never overwritten**.
+* **Tray notification:** An amber `▲` badge appears on the tray icon when a new release is published on GitHub; the app also re-checks in the background every few hours.
+* **Steam-style update window:** compact progress bar with speed and ETA, cancel / retry, release notes on demand.
+* **Real one-click install:** the build is downloaded to `%LOCALAPPDATA%\SCUM_Chat_Translator\updates`, verified (size, executable header, SHA-256), swapped in place with automatic rollback, and the app restarts by itself. The Normal / Portable build is matched automatically.
+* **Strict user data protection:** `config.json`, `points.json` and `profiles.json` are never overwritten.
 
 ---
 
-## 🛡️ Core Feature 5: Windows Autostart & SmartScreen Compliance
+## 🧰 Core Feature 5: Chat Tools (History, Filters, Profiles)
+
+* **Chat history window** (tray menu): search, filter by player / type / translated-only, export to TXT, CSV or JSON. Optional on-disk persistence with a size limit.
+* **Blocked words:** mask them, hide the message or show it untranslated; whole-word and case options.
+* **Language auto-detection:** skips translation when a message is already in your language (or in languages you list). Works offline for obvious scripts and uses the translation service's result otherwise.
+* **Profiles:** save named presets (translation, filters, overlay look) and switch from Settings or the tray menu.
+* **Waypoint import / export** (JSON) with merge or replace.
+* Every feature has its own switch in Settings, so each user can tune or disable it.
+
+---
+
+## 🛡️ Core Feature 6: Windows Autostart & SmartScreen Compliance
 
 * **Seamless Autostart:** Optional startup with Windows via `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (no admin rights required).
 * **SmartScreen Mitigation:** Binary contains embedded PE metadata and includes `install_cert.bat` to eliminate Windows Defender SmartScreen warnings.
@@ -223,9 +234,22 @@ The compiled binary will be placed in `dist/SCUM_Chat_Translator.exe`.
 | `map_show_keypads` | bool | `true` | Show k1..k9 keypad sub-grid lines. |
 | `auto_focus_new_point` | bool | `true` | Automatically pan and focus map on newly detected coordinates. |
 | `enable_chat_translator`| bool | `true` | Toggle chat translator overlay (uncheck for pure "Map Only" mode). |
-| `ui_language` | string | `"uk"` | Interface language (`"uk"`, `"en"`, `"ru"`). |
+| `ui_language` | string | `"en"` | Interface language code (any file in `assets/locales/`). |
 | `auto_start` | bool | `true` | Automatically start application with Windows boot. |
 | `auto_check_updates` | bool | `true` | Check for updates automatically in background on launch. |
+| `update_check_interval_hours` | int | `6` | Background update re-check interval (`0` = only at startup). |
+| `blacklist_words_enabled` | bool | `false` | Enable the blocked-word filter. |
+| `blacklist_words` | list | `[]` | Blocked words / phrases. |
+| `blacklist_words_action` | string | `"mask"` | `mask`, `hide` or `no_translate`. |
+| `blacklist_words_whole_word` | bool | `true` | Match whole words only. |
+| `blacklist_words_case_sensitive` | bool | `false` | Case-sensitive matching. |
+| `autodetect_enabled` | bool | `true` | Skip translation for messages already in an excluded language. |
+| `autodetect_skip_target_language` | bool | `true` | Treat your target language as "no translation needed". |
+| `autodetect_skip_languages` | list | `[]` | Extra language codes to skip. |
+| `autodetect_min_length` | int | `3` | Minimum letters before detection is attempted. |
+| `history_enabled` | bool | `true` | Record chat history. |
+| `history_save_to_disk` | bool | `true` | Keep history between sessions. |
+| `history_max_entries` | int | `5000` | Maximum stored messages. |
 
 ---
 
@@ -308,25 +332,34 @@ The compiled binary will be placed in `dist/SCUM_Chat_Translator.exe`.
 
 ---
 
-## 🌐 Ключова можливість 3: Мультиязичність інтерфейсу (i18n)
+## 🌐 Ключова можливість 3: Мови інтерфейсу (i18n)
 
-* **3 повноцінні мови інтерфейсу:** Перемикання в налаштуваннях на льоту:
-  * 🇺🇦 **Українська** (Ukrainian)
-  * 🇬🇧 **English** (English)
-  * 🇷🇺 **Русский** (Russian)
-* Модульні JSON-словники у папці `assets/locales/` із системою автоматичного фолбеку.
+* **Вкладка «Language» у налаштуваннях:** мову інтерфейсу можна змінити будь-коли. Програма постачається англійською; кожен файл `assets/locales/<код>.json` підхоплюється автоматично, тож додати мову можна без змін у коді ([docs/ADDING_A_LANGUAGE.md](docs/ADDING_A_LANGUAGE.md)). Відсутні ключі беруться з англійської.
+* **Переклад чату** працює для 100+ мов незалежно від мови інтерфейсу.
 
 ---
 
 ## 🔄 Ключова можливість 4: Автооновлення в 1 клік та збереження даних
 
-* **Значок-бейдж у треї:** Помаранчевий маркер `▲` біля годинника при появі свіжої версії на GitHub.
-* **Оновлення в один клік:** Завантаження релізу, автоматична заміна бінарників та перезапуск прямо з меню трею.
-* **100% збереження персональних даних:** Файли `config.json` та `points.json` гарантовано захищені від перезапису.
+* **Сповіщення в треї:** помаранчевий значок `▲` з'являється, коли на GitHub виходить новий реліз; програма також перевіряє оновлення у фоні.
+* **Вікно оновлення в стилі Steam:** компактна смуга прогресу зі швидкістю та залишком часу, «Скасувати» / «Повторити», нотатки релізу за запитом.
+* **Справжнє оновлення в один клік:** збірка завантажується до `%LOCALAPPDATA%\SCUM_Chat_Translator\updates`, перевіряється (розмір, заголовок, SHA-256), підміняється на місці з автоматичним відкатом, після чого програма перезапускається. Звичайна / Portable збірка визначається автоматично.
+* **100% збереження даних:** `config.json`, `points.json` та `profiles.json` ніколи не перезаписуються.
 
 ---
 
-## 🛡️ Ключова можливість 5: Автозапуск та захист від SmartScreen
+## 🧰 Ключова можливість 5: Інструменти чату (історія, фільтри, профілі)
+
+* **Історія чату** (меню трею): пошук, фільтри за гравцем / типом / лише перекладені, експорт у TXT, CSV або JSON.
+* **Заборонені слова:** маскування, приховування повідомлення або показ без перекладу.
+* **Автовизначення мови:** пропускає переклад, якщо повідомлення вже вашою мовою (або мовами зі списку).
+* **Профілі налаштувань** з перемиканням у налаштуваннях або в треї.
+* **Імпорт / експорт точок** (JSON) зі злиттям або заміною.
+* Кожна функція має власний перемикач у налаштуваннях.
+
+---
+
+## 🛡️ Ключова можливість 6: Автозапуск та захист від SmartScreen
 
 * **Автозапуск Windows:** Безпечний запуск разом із системою через гілку `HKCU` без прав адміністратора.
 * **Усунення синього вікна SmartScreen:** Інтегровано скрипт `install_cert.bat` для додавання локального сертифіката довіри в один клік.
@@ -417,9 +450,22 @@ pyinstaller SCUM_Chat_Translator.spec
 | `map_show_keypads` | bool | `true` | Відображення підсітки кейпадів k1..k9. |
 | `auto_focus_new_point` | bool | `true` | Автоматичне фокусування карти на нових координатах із чату. |
 | `enable_chat_translator`| bool | `true` | Увімкнення перекладача чату (вимкніть для режиму «Тільки Карта»). |
-| `ui_language` | string | `"uk"` | Мова інтерфейсу (`"uk"`, `"en"`, `"ru"`). |
+| `ui_language` | string | `"en"` | Код мови інтерфейсу (будь-який файл у `assets/locales/`). |
 | `auto_start` | bool | `true` | Безпечний автозапуск програми разом із Windows. |
 | `auto_check_updates` | bool | `true` | Автоматична фонова перевірка оновлень при запуску. |
+| `update_check_interval_hours` | int | `6` | Background update re-check interval (`0` = only at startup). |
+| `blacklist_words_enabled` | bool | `false` | Enable the blocked-word filter. |
+| `blacklist_words` | list | `[]` | Blocked words / phrases. |
+| `blacklist_words_action` | string | `"mask"` | `mask`, `hide` or `no_translate`. |
+| `blacklist_words_whole_word` | bool | `true` | Match whole words only. |
+| `blacklist_words_case_sensitive` | bool | `false` | Case-sensitive matching. |
+| `autodetect_enabled` | bool | `true` | Skip translation for messages already in an excluded language. |
+| `autodetect_skip_target_language` | bool | `true` | Treat your target language as "no translation needed". |
+| `autodetect_skip_languages` | list | `[]` | Extra language codes to skip. |
+| `autodetect_min_length` | int | `3` | Minimum letters before detection is attempted. |
+| `history_enabled` | bool | `true` | Record chat history. |
+| `history_save_to_disk` | bool | `true` | Keep history between sessions. |
+| `history_max_entries` | int | `5000` | Maximum stored messages. |
 
 ---
 

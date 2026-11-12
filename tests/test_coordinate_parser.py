@@ -1,7 +1,9 @@
-import pytest
 from core.coordinate_parser import (
-    parse_chat_coordinate, convert_scum_to_norm, convert_norm_to_scum,
-    get_sector_info, MapPoint
+    MapPoint,
+    convert_norm_to_scum,
+    convert_scum_to_norm,
+    get_sector_info,
+    parse_chat_coordinate,
 )
 
 SAMPLE_COORD = "{X=174468.797 Y=345933.000 Z=34103.105|P=342.318665 Y=117.616730 R=0.000000}"
@@ -96,7 +98,7 @@ def test_category_auto_detection():
     assert pt_boat.category == "boat"
     assert pt_boat.color == "#06b6d4"
 
-    # Cache (схрон / сундук с лутом)
+    # Cache (stash / loot chest)
     pt_cache = parse_chat_coordinate(f"схрон(сундук с лутом){SAMPLE_COORD}")
     assert pt_cache.category == "cache"
     assert pt_cache.color == "#10b981"

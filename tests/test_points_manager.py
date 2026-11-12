@@ -1,7 +1,6 @@
-import os
-import pytest
-from PyQt6.QtWidgets import QApplication
 import sys
+
+from PyQt6.QtWidgets import QApplication
 
 from core.coordinate_parser import parse_chat_coordinate
 from core.points_manager import PointsManager

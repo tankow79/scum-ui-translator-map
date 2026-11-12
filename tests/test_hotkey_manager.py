@@ -1,13 +1,13 @@
-import pytest
-from core.hotkey_manager import parse_hotkey_string, format_hotkey
+from core.hotkey_manager import format_hotkey, parse_hotkey_string
+
 
 def test_hotkey_parsing():
-    # Одиночні клавіші
+    # Single keys
     assert parse_hotkey_string("F9") == (False, False, False, 120)
     assert parse_hotkey_string("F8") == (False, False, False, 119)
     assert parse_hotkey_string("T") == (False, False, False, 84)
 
-    # Комбінації
+    # Combinations
     assert parse_hotkey_string("Ctrl+T") == (True, False, False, 84)
     assert parse_hotkey_string("Ctrl+Shift+T") == (True, False, True, 84)
     assert parse_hotkey_string("Alt+F9") == (False, True, False, 120)

@@ -1,13 +1,13 @@
 """
-Повний список усіх мов, які підтримує Google Translate.
-Популярні мови винесено вгору для зручності вибору.
+Full list of all languages supported by Google Translate.
+Popular languages are listed first for convenience.
 """
 
 from typing import List, Tuple
 
-# Список кортежів: (Назва для інтерфейсу, код мови)
+# List of tuples: (UI display name, language code)
 ALL_LANGUAGES: List[Tuple[str, str]] = [
-    # --- Популярні мови ---
+    # --- Popular languages ---
     ("🇺🇦 Українська (Ukrainian)", "uk"),
     ("🇬🇧 English (Англійська)", "en"),
     ("🇵🇱 Polski (Польська)", "pl"),
@@ -50,7 +50,7 @@ ALL_LANGUAGES: List[Tuple[str, str]] = [
     ("🇰🇿 Қазақ (Казахська)", "kk"),
     ("🇺🇿 O'zbek (Узбецька)", "uz"),
 
-    # --- Інші мови за алфавітом ---
+    # --- Other languages, alphabetical ---
     ("Afrikaans (Африкаанс)", "af"),
     ("Shqip (Албанська)", "sq"),
     ("Amharic (Амхарська)", "am"),

@@ -1,30 +1,42 @@
 import html
 import time
-from dataclasses import dataclass
-from typing import List, Optional
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from typing import List
 
+from PyQt6.QtCore import QEvent, QPoint, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QImage, QKeyEvent, QPainter, QPen
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTextBrowser, QSizeGrip, QFrame, QLineEdit, QComboBox, QApplication
+    QApplication,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSizeGrip,
+    QTextBrowser,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QTimer, QEvent
-from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QKeyEvent, QImage
 
 from core.config_manager import ConfigManager
-from core.languages import ALL_LANGUAGES
 from core.i18n import tr
+from core.languages import ALL_LANGUAGES
 from utils.win_api import (
-    set_click_through, keep_on_top, force_foreground_window,
-    restore_game_focus, set_last_game_hwnd, user32
+    force_foreground_window,
+    keep_on_top,
+    restore_game_focus,
+    set_click_through,
+    set_last_game_hwnd,
+    user32,
 )
 
 
 class OutlinedChatBrowser(QTextBrowser):
     """
-    Текстовий браузер чату з апаратною чорною обводкою (outline)
-    у стилі HUD SCUM / Unreal Engine. Забезпечує 100% читабельність тексту
-    на будь-якому ігровому фоні (сніг, вода, сонце, скелі, трава).
+    Chat text browser with a black outline in the SCUM / Unreal Engine HUD style.
+    Keeps text fully readable on any game background (snow, water, sun, rocks, grass).
     """
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -43,7 +55,7 @@ class OutlinedChatBrowser(QTextBrowser):
             if w <= 0 or h <= 0:
                 return True
 
-            # 1. Рендеримо текст документа у прозоре зображення з урахуванням прокручування
+            # 1. Render the document text into a transparent image, accounting for scrolling
             text_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
             text_img.fill(0)
             p1 = QPainter(text_img)
@@ -51,14 +63,14 @@ class OutlinedChatBrowser(QTextBrowser):
             self.document().drawContents(p1)
             p1.end()
 
-            # 2. Отримуємо точний силует тексту та заповнюємо його чорним кольором
+            # 2. Take the exact text silhouette and fill it with black
             black_img = text_img.copy()
             p2 = QPainter(black_img)
             p2.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
             p2.fillRect(black_img.rect(), QColor(0, 0, 0, 255))
             p2.end()
 
-            # 3. Малюємо обводку на в'юпорті з адаптивним зміщенням під розмір шрифту
+            # 3. Draw the outline on the viewport with an offset adapted to the font size
             p = QPainter(vp)
             offsets = [(-1, -1), (1, -1), (-1, 1), (1, 1), (-1, 0), (1, 0), (0, -1), (0, 1)]
             if self.font_bold or self.font_size >= 16:
@@ -67,7 +79,7 @@ class OutlinedChatBrowser(QTextBrowser):
             for dx, dy in offsets:
                 p.drawImage(dx, dy, black_img)
 
-            # 4. Накладаємо яскравий кольоровий текст поверх обводки
+            # 4. Draw the bright colored text over the outline
             p.drawImage(0, 0, text_img)
             p.end()
             return True
@@ -88,10 +100,10 @@ class ChatEntry:
 
 class ChatOverlay(QWidget):
     """
-    Єдине уніфіковане вікно HUD-оверлея та швидкого перекладу:
-    - Висококонтрастні кольори з тінню (text-shadow) для 100% читабельності на будь-якому фоні гри.
-    - Вбудована панель швидкого перекладу в чат без окремих зайвих вікон.
-    - Підтримка Drag & Resize у режимі налаштування (F9).
+    Unified HUD overlay and quick-translation window:
+    - High-contrast colors with shadow for readability on any game background.
+    - Built-in quick chat translation panel, no extra windows.
+    - Drag & resize support in adjust mode (F9).
     """
     open_settings_requested = pyqtSignal()
     open_map_requested = pyqtSignal()
@@ -103,23 +115,23 @@ class ChatOverlay(QWidget):
         super().__init__()
         self.cfg = config_manager
         self.is_locked = True
-        self.in_chat_mode = False   # Чи відкрито чат у грі
+        self.in_chat_mode = False   # Whether the in-game chat is open
         self._drag_pos = QPoint()
         self._entries: List[ChatEntry] = []
         self._current_translation: str = ""
         self._translator = None
 
-        # Асинхронний фоновий переклад без блокування введення (0ms lag)
+        # Async background translation that never blocks typing
         self._live_executor = ThreadPoolExecutor(max_workers=1)
         self._live_req_id = 0
         self.live_translation_ready.connect(self._on_live_translation_ready)
 
-        # Дебаунс живого перекладу
+        # Live translation debounce
         self._debounce_timer = QTimer(self)
         self._debounce_timer.setSingleShot(True)
         self._debounce_timer.timeout.connect(self._do_live_translate)
 
-        # Таймер згасання повідомлень (кожні 500мс)
+        # Message fade timer (every 500 ms)
         self._fade_timer = QTimer(self)
         self._fade_timer.timeout.connect(self._refresh_rendered_chat)
         self._fade_timer.start(500)
@@ -129,7 +141,7 @@ class ChatOverlay(QWidget):
         self.apply_config_geometry()
         self.update_lock_state(initial=True)
 
-    # ──────────────────────── Ініціалізація вікна ────────────────────────
+    # ──────────────────────── Window init ────────────────────────
 
     def init_window_flags(self):
         self.setWindowFlags(
@@ -153,11 +165,11 @@ class ChatOverlay(QWidget):
         self.update_style()
 
     def set_translator(self, translator):
-        """Зв'язок з модулем перекладу Google."""
+        """Attach the translator module."""
         self._translator = translator
 
     def _build_header_bar(self):
-        """Верхня панель керування (видима у режимі редагування F9)."""
+        """Top control bar (visible in adjust mode, F9)."""
         self.header_bar = QWidget(self)
         self.header_bar.setStyleSheet("""
             QWidget {
@@ -176,7 +188,7 @@ class ChatOverlay(QWidget):
         h.addWidget(self.title_label)
         h.addStretch()
 
-        # Кнопка тесту
+        # Test button
         self.btn_test = QPushButton(f"🧪 {tr('overlay.test_btn')}")
         self.btn_test.setFixedHeight(24)
         self.btn_test.setToolTip(tr("tray.test_msg"))
@@ -195,7 +207,7 @@ class ChatOverlay(QWidget):
         self.btn_test.clicked.connect(self.test_requested.emit)
         h.addWidget(self.btn_test)
 
-        # Очистити історію
+        # Clear history
         self.btn_clear = QPushButton("🧹")
         self.btn_clear.setFixedSize(24, 24)
         self.btn_clear.setToolTip(tr("overlay.clear_history"))
@@ -212,7 +224,7 @@ class ChatOverlay(QWidget):
         self.btn_clear.clicked.connect(self.clear_chat)
         h.addWidget(self.btn_clear)
 
-        # Карта та точки (Ctrl+M)
+        # Map and points (Ctrl+M)
         self.btn_map = QPushButton("🗺")
         self.btn_map.setFixedSize(24, 24)
         map_hotkey = self.cfg.get("hotkey_toggle_map", "Ctrl+M")
@@ -230,7 +242,7 @@ class ChatOverlay(QWidget):
         self.btn_map.clicked.connect(self.open_map_requested.emit)
         h.addWidget(self.btn_map)
 
-        # Налаштування
+        # Settings
         self.btn_settings = QPushButton("🛠")
         self.btn_settings.setFixedSize(24, 24)
         self.btn_settings.setToolTip(tr("overlay.open_settings"))
@@ -247,7 +259,7 @@ class ChatOverlay(QWidget):
         self.btn_settings.clicked.connect(self.open_settings_requested.emit)
         h.addWidget(self.btn_settings)
 
-        # Зафіксувати
+        # Lock
         self.btn_lock = QPushButton(tr("overlay.lock"))
         self.btn_lock.setFixedHeight(24)
         self.btn_lock.setStyleSheet("""
@@ -268,7 +280,7 @@ class ChatOverlay(QWidget):
         self.main_layout.addWidget(self.header_bar)
 
     def _build_chat_view(self):
-        """Область відображення чату з апаратною чорною обводкою."""
+        """Chat display area with a black text outline."""
         self.chat_view = OutlinedChatBrowser(self)
         self.chat_view.setOpenExternalLinks(True)
         self.chat_view.setFrameShape(QFrame.Shape.NoFrame)
@@ -279,8 +291,8 @@ class ChatOverlay(QWidget):
 
     def _build_input_bar(self):
         """
-        Вбудована панель швидкого перекладу в чат у стилі Midnight Cyan.
-        Показується в режимі редагування (F9) або коли відкрито чат (T).
+        Built-in quick chat translation panel (Midnight Cyan style).
+        Shown in adjust mode (F9) or when the chat is open (T).
         """
         self.input_bar = QWidget(self)
         self.input_bar.setStyleSheet("""
@@ -337,7 +349,7 @@ class ChatOverlay(QWidget):
         v.setContentsMargins(10, 8, 10, 8)
         v.setSpacing(6)
 
-        # 1. Верхній рядок: Мова 1 ⇄ Мова 2 + Підказка
+        # 1. Top row: language 1 <-> language 2 + hint
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
 
@@ -350,7 +362,7 @@ class ChatOverlay(QWidget):
 
         self.btn_swap = QPushButton("⇄")
         self.btn_swap.setFixedSize(24, 24)
-        self.btn_swap.setToolTip("Поміняти мови місцями")
+        self.btn_swap.setToolTip(tr("overlay_ui.swap_languages"))
         self.btn_swap.setStyleSheet("""
             QPushButton {
                 background-color: #1e293b;
@@ -384,14 +396,14 @@ class ChatOverlay(QWidget):
 
         v.addLayout(top_row)
 
-        # 2. Поле введення
+        # 2. Input field
         self.input_field = QLineEdit()
         self.input_field.setPlaceholderText(tr("overlay.placeholder_type"))
         self.input_field.textChanged.connect(self._on_input_text_changed)
         self.input_field.installEventFilter(self)
         v.addWidget(self.input_field)
 
-        # 3. Результат живого перекладу
+        # 3. Live translation result
         self.lbl_translation = QLabel(f"<i>{tr('overlay.placeholder_input')}</i>")
         self.lbl_translation.setStyleSheet("""
             QLabel {
@@ -407,7 +419,7 @@ class ChatOverlay(QWidget):
         self.lbl_translation.setWordWrap(True)
         v.addWidget(self.lbl_translation)
 
-        # 4. Кнопка копіювання перекладу
+        # 4. Copy translation button
         btn_row = QHBoxLayout()
         btn_row.addStretch()
 
@@ -432,7 +444,7 @@ class ChatOverlay(QWidget):
         self._sync_combos_from_config()
 
     def _build_resize_grip(self):
-        """Нижній кутик зміни розміру вікна."""
+        """Bottom corner window resize grip."""
         self.bottom_bar = QWidget(self)
         bl = QHBoxLayout(self.bottom_bar)
         bl.setContentsMargins(0, 0, 0, 0)
@@ -442,7 +454,7 @@ class ChatOverlay(QWidget):
         bl.addWidget(self.size_grip)
         self.main_layout.addWidget(self.bottom_bar)
 
-    # ──────────────────────── Вбудований перекладач ─────────────────────
+    # ──────────────────────── Built-in translator ─────────────────────
 
     def _sync_combos_from_config(self):
         my_l = self.cfg.get("outgoing_my_lang", "uk")
@@ -487,7 +499,7 @@ class ChatOverlay(QWidget):
             self._debounce_timer.stop()
             self.lbl_translation.setText(f"<i>{tr('overlay.placeholder_input')}</i>")
             return
-        # Таймер 450мс гарантує, що введення тексту не викликає підвисань інтерфейсу
+        # 450 ms timer keeps typing from causing UI stalls
         self._debounce_timer.start(450)
 
     def _do_live_translate(self):
@@ -512,7 +524,7 @@ class ChatOverlay(QWidget):
 
     def _on_live_translation_ready(self, req_id: int, translation: str):
         if req_id != self._live_req_id:
-            return  # Ігноруємо застарілу відповідь від попереднього стану тексту
+            return  # Ignore a stale response from an earlier text state
         if translation:
             self._current_translation = translation
             self.lbl_translation.setText(translation)
@@ -525,8 +537,8 @@ class ChatOverlay(QWidget):
             self.set_in_chat_mode(False)
             return
 
-        # Якщо користувач натиснув Enter раніше ніж закінчився дебаунс — виконуємо швидкий переклад
-        if not self._current_translation or self.lbl_translation.text() in ("<i>Перекладаємо...</i>", "<i>Тут з'явиться переклад...</i>"):
+        # If Enter was pressed before the debounce finished, translate immediately
+        if not self._current_translation or self.lbl_translation.text() in (f"<i>{tr('overlay.translating')}</i>", f"<i>{tr('overlay.placeholder_input')}</i>"):
             if self._translator:
                 my_lang = self.combo_src.currentData() or "uk"
                 target_lang = self.combo_tgt.currentData() or "en"
@@ -538,12 +550,12 @@ class ChatOverlay(QWidget):
             QApplication.clipboard().setText(self._current_translation)
             self.translate_and_copy.emit(orig, self._current_translation)
 
-        # Негайно ховаємо режим чату та повертаємо фокус у гру SCUM
+        # Hide chat mode right away and return focus to the SCUM game
         self.set_in_chat_mode(False)
 
     def focus_input(self):
-        """Активувати вікно і передати фокус полю введення."""
-        # Запам'ятовуємо вікно гри перед передачею фокусу нашому оверлею
+        """Activate the window and focus the input field."""
+        # Remember the game window before giving focus to our overlay
         try:
             fg = user32.GetForegroundWindow()
             if fg and fg != int(self.winId()):
@@ -569,7 +581,7 @@ class ChatOverlay(QWidget):
         self.input_field.setFocus()
 
     def close_input(self):
-        """Очистити поле введення, повернути наскрізний клік і фокус грі."""
+        """Clear the input, restore click-through and return focus to the game."""
         self._live_req_id += 1
         self._debounce_timer.stop()
         self.input_field.clear()
@@ -584,10 +596,10 @@ class ChatOverlay(QWidget):
             set_click_through(hwnd, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
 
-        # Миттєво повертаємо фокус та мишу у вікно гри SCUM (як в NVIDIA/Steam оверлеях)
+        # Instantly return focus and mouse to the SCUM window (like NVIDIA/Steam overlays)
         restore_game_focus()
 
-    # ──────────────────────── Режим чату та управління ──────────────────
+    # ──────────────────────── Chat mode and controls ──────────────────
 
     def apply_config_geometry(self):
         screen = QApplication.primaryScreen()
@@ -603,14 +615,14 @@ class ChatOverlay(QWidget):
         saved_w = self.cfg.get("overlay_width", -1)
         saved_h = self.cfg.get("overlay_height", -1)
 
-        # 1. Адаптивні пропорційні розміри під будь-який екран (від 1366x768 до 1440p / 4K)
+        # 1. Adaptive proportional sizes for any screen (1366x768 to 1440p / 4K)
         default_w = max(520, min(int(screen_w * 0.36), 850))
         default_h = max(260, min(int(screen_h * 0.30), 450))
 
         w = saved_w if (saved_w and saved_w > 0) else default_w
         h = saved_h if (saved_h and saved_h > 0) else default_h
 
-        # 2. Позиція: за замовчуванням лівий нижній сектор над ігровим рядком чату SCUM
+        # 2. Position: default is the lower-left area above the in-game SCUM chat line
         default_x = screen_x + max(25, int(screen_w * 0.025))
         default_y = screen_y + screen_h - h - max(60, int(screen_h * 0.08))
 
@@ -621,7 +633,7 @@ class ChatOverlay(QWidget):
             x = saved_x
             y = saved_y
 
-        # 3. Захист від виходу за межі екрана гравця (інша роздільність / зміна монітора)
+        # 3. Keep the window on screen (different resolution / monitor change)
         w = max(380, min(w, screen_w - 20))
         h = max(180, min(h, screen_h - 20))
         x = max(screen_x + 5, min(x, screen_x + screen_w - w - 5))
@@ -637,9 +649,9 @@ class ChatOverlay(QWidget):
 
     def set_in_chat_mode(self, in_chat: bool):
         """
-        Режим відкритого чату гри (T / Escape).
-        in_chat=True: показати всі повідомлення + відкрити вбудований перекладач.
-        in_chat=False: повернутися в HUD режим (повідомлення згасають, перекладач сховано).
+        In-game chat open mode (T / Escape).
+        in_chat=True: show all messages + open the built-in translator.
+        in_chat=False: back to HUD mode (messages fade, translator hidden).
         """
         if self.in_chat_mode == in_chat:
             return
@@ -654,7 +666,7 @@ class ChatOverlay(QWidget):
             self.close_input()
 
     def _update_panels_visibility(self):
-        """Контроль видимості панелей."""
+        """Control panel visibility."""
         if not self.is_locked:
             self.header_bar.show()
             self.input_bar.show()
@@ -717,7 +729,7 @@ class ChatOverlay(QWidget):
         rect = self.rect().adjusted(1, 1, -1, -1)
 
         if not self.is_locked:
-            # Режим налаштування (F9): фон #0f172a та пунктирна рамка кольору Electric Sky Blue #38bdf8
+            # Adjust mode (F9): #0f172a background with a dashed Electric Sky Blue #38bdf8 border
             bg = QColor(15, 23, 42, max(alpha, 220))
             painter.setBrush(QBrush(bg))
             painter.setPen(QPen(QColor("#38bdf8"), 2, Qt.PenStyle.DashLine))
@@ -759,7 +771,7 @@ class ChatOverlay(QWidget):
             self.btn_lock.setText(tr("overlay.lock") if not self.is_locked else tr("overlay.unlock"))
 
         if self.is_locked:
-            # Клікабельне тільки якщо зараз відкритий режим введення чату
+            # Clickable only while chat input mode is open
             clickthrough = not self.in_chat_mode
             set_click_through(hwnd, clickthrough)
             keep_on_top(hwnd)
@@ -770,7 +782,7 @@ class ChatOverlay(QWidget):
 
         self.update()
 
-    # ──────────────────────── Повідомлення чату ─────────────────────────
+    # ──────────────────────── Chat messages ─────────────────────────
 
     def add_message(self, time_str: str, sender: str, original: str,
                     translated: str, src_lang: str, msg_type: str):
@@ -822,7 +834,7 @@ class ChatOverlay(QWidget):
 
         html_parts = []
         for e in visible_entries:
-            # Автентична колірна гама чату SCUM 1:1 з грою:
+            # Authentic SCUM in-game chat color scheme:
             is_squad = (
                 (own_nick and e.sender.lower() == own_nick) or
                 e.msg_type in ("squad", "team") or
@@ -833,7 +845,7 @@ class ChatOverlay(QWidget):
                 ))
             )
             if is_squad:
-                # Власний нікнейм / повідомлення загону (скваду) — соковитий зелений SCUM Green (#4ade80)
+                # Own nickname / squad messages: SCUM Green (#4ade80)
                 sender_color = "#4ade80"
                 msg_color = "#4ade80"
                 trans_color = "#4ade80"
@@ -841,12 +853,12 @@ class ChatOverlay(QWidget):
                 s in e.sender.lower()
                 for s in ["message of the day", "announcement", "welcome", "sunhouse", "admin", "server"]
             ):
-                # Серверні повідомлення, MOTD, правила — золотаво-жовтий бурштин SCUM (#ffca00)
+                # Server messages, MOTD, rules: SCUM amber (#ffca00)
                 sender_color = "#ffca00"
                 msg_color = "#ffca00"
                 trans_color = "#ffca00"
             else:
-                # Звичайний глобальний чат гравців — електричний бірюзовий Electric Cyan (#00e5ff)
+                # Regular global player chat: Electric Cyan (#00e5ff)
                 sender_color = "#00e5ff"
                 msg_color = "#00e5ff"
                 trans_color = "#00e5ff"
@@ -888,7 +900,7 @@ class ChatOverlay(QWidget):
         self.chat_view.clear()
         self.update()
 
-    # ──────────────────────── Події клавіш та миші ───────────────────────
+    # ──────────────────────── Key and mouse events ───────────────────────
 
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
@@ -905,7 +917,7 @@ class ChatOverlay(QWidget):
         super().keyPressEvent(event)
 
     def eventFilter(self, source, event):
-        """Перехоплення Enter та Escape безпосередньо у полі вводу."""
+        """Intercept Enter and Escape directly in the input field."""
         if source is self.input_field and event.type() == QEvent.Type.KeyPress:
             key = event.key()
             if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):

@@ -1,37 +1,49 @@
+import logging
+import math
 import os
 import sys
-import math
-from typing import List, Optional
+from typing import Optional
 
+from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QFont, QImage, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPen, QWheelEvent
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QSizeGrip, QFrame, QApplication, QToolTip, QMenu, QColorDialog,
-    QInputDialog
-)
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF, pyqtSignal
-from PyQt6.QtGui import (
-    QPainter, QColor, QBrush, QPen, QFont, QImage,
-    QWheelEvent, QMouseEvent, QPainterPath, QKeyEvent
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QSizeGrip,
+    QToolTip,
+    QVBoxLayout,
+    QWidget,
 )
 
 from core.config_manager import ConfigManager
 from core.coordinate_parser import (
-    MapPoint, convert_norm_to_scum, get_sector_info,
-    POINT_CATEGORIES, get_category_info, detect_category_from_name
+    POINT_CATEGORIES,
+    MapPoint,
+    convert_norm_to_scum,
+    get_category_info,
+    get_sector_info,
 )
+from core.i18n import tr
 from core.points_manager import PointsManager
 from ui.color_picker import open_safe_color_dialog
+
+log = logging.getLogger("scum.map")
 
 
 class MapCanvasWidget(QWidget):
     """
-    Інтерактивне полотно карти SCUM Island:
-    - Плавне панорамування (Drag мишею)
-    - Плавне масштабування на колесо миші (фокус під курсором)
-    - Відображення супутникової та тактичної карти
-    - Рендеринг сітки секторів (D0..D4, C0..C4, B0..B4, A0..A4, Z0..Z4) та кейпадів (k1..k9)
-    - Відображення збережених міток з чату (з виділенням активної)
-    - Hover-підказки та координати курсору в реальному часі
+    Interactive SCUM Island map canvas:
+    - Smooth panning (mouse drag)
+    - Smooth zoom on mouse wheel (focused under the cursor)
+    - Satellite and tactical map variants
+    - Sector grid (D0..D4, C0..C4, B0..B4, A0..A4, Z0..Z4) and keypads (k1..k9) rendering
+    - Saved chat markers (active one highlighted)
+    - Hover tooltips and live cursor coordinates
     """
     cursor_coords_changed = pyqtSignal(float, float, str, str)  # x, y, sector, keypad
     point_clicked = pyqtSignal(object)  # MapPoint
@@ -44,28 +56,29 @@ class MapCanvasWidget(QWidget):
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        # Карта
+        # Map
         self.current_variant = self.cfg.get("map_variant", "regular")
         self.map_images = {}
         self._load_base_maps()
 
-        # Трансформація виду
+        # View transform
         self.zoom = 1.0
         self.pan_x = 0.0
         self.pan_y = 0.0
         self._dragging = False
         self._drag_start = QPoint()
 
-        # Налаштування відображення
+        # Display settings
         self.show_grid = self.cfg.get("map_show_grid", True)
         self.show_keypads = self.cfg.get("map_show_keypads", True)
         self.active_point_id: Optional[str] = None
 
-        # Підписка на оновлення точок
+        # Subscribe to point updates
         self.points_mgr.point_added.connect(self._on_point_added)
         self.points_mgr.point_updated.connect(lambda _: self.update())
         self.points_mgr.point_deleted.connect(lambda _: self.update())
         self.points_mgr.points_cleared.connect(lambda: self.update())
+        self.points_mgr.points_reloaded.connect(lambda: self.update())
 
     def _load_base_maps(self):
         candidates = []
@@ -106,7 +119,7 @@ class MapCanvasWidget(QWidget):
         self.update()
 
     def reset_view(self):
-        """Скинути масштабування і розташувати карту по центру віджета."""
+        """Reset zoom and center the map in the widget."""
         cur_img = self.map_images.get(self.current_variant)
         if not cur_img or cur_img.isNull():
             return
@@ -116,12 +129,12 @@ class MapCanvasWidget(QWidget):
         img_w = cur_img.width()
         img_h = cur_img.height()
 
-        # Масштаб так, щоб уся мапа помістилася з невеликими відступами
+        # Scale so the whole map fits with small margins
         scale_x = w_view / img_w
         scale_y = h_view / img_h
         self.zoom = min(scale_x, scale_y) * 0.95
 
-        # Центрування
+        # Centering
         rendered_w = img_w * self.zoom
         rendered_h = img_h * self.zoom
         self.pan_x = (w_view - rendered_w) / 2.0
@@ -129,7 +142,7 @@ class MapCanvasWidget(QWidget):
         self.update()
 
     def focus_point(self, point: MapPoint, target_zoom: float = 2.5):
-        """Плавне центрування карти на вибраній точці."""
+        """Center the map on the selected point."""
         cur_img = self.map_images.get(self.current_variant)
         if not cur_img or cur_img.isNull():
             return
@@ -140,11 +153,11 @@ class MapCanvasWidget(QWidget):
 
         self.zoom = max(self.zoom, target_zoom)
 
-        # Координати точки на карті у пікселях
+        # Point position on the map in pixels
         pt_x = point.norm_x * img_w
         pt_y = point.norm_y * img_h
 
-        # Розташовуємо точку рівно по центру екрана
+        # Place the point exactly at the view center
         w_view = self.width()
         h_view = self.height()
         self.pan_x = (w_view / 2.0) - (pt_x * self.zoom)
@@ -159,10 +172,10 @@ class MapCanvasWidget(QWidget):
             self.active_point_id = point.id
             self.update()
 
-    # ──────────────────────── Події миші ────────────────────────
+    # ──────────────────────── Mouse events ────────────────────────
 
     def wheelEvent(self, event: QWheelEvent):
-        """Збільшення / зменшення на коліщатко миші під курсором."""
+        """Zoom in/out with the mouse wheel around the cursor."""
         delta = event.angleDelta().y()
         if delta == 0:
             return
@@ -173,11 +186,11 @@ class MapCanvasWidget(QWidget):
         if new_zoom == self.zoom:
             return
 
-        # Позиція курсора відносно віджета
+        # Cursor position relative to the widget
         mx = event.position().x()
         my = event.position().y()
 
-        # Зберігаємо точку карти під курсором стабільною
+        # Keep the map point under the cursor stable
         map_x = (mx - self.pan_x) / self.zoom
         map_y = (my - self.pan_y) / self.zoom
 
@@ -199,7 +212,7 @@ class MapCanvasWidget(QWidget):
                 return
 
         if event.button() in (Qt.MouseButton.LeftButton, Qt.MouseButton.MiddleButton):
-            # Перевіряємо, чи клікнули на якусь із міток
+            # Check whether a marker was clicked
             clicked_point = self._find_marker_at(event.pos())
             if clicked_point:
                 self.active_point_id = clicked_point.id
@@ -241,57 +254,57 @@ class MapCanvasWidget(QWidget):
         title_act.setEnabled(False)
         menu.addSeparator()
 
-        # 1. Підменю зміни типу мітки
-        type_menu = menu.addMenu(f"🏷️ Тип: {cat_info['name']}")
+        # 1. Marker type submenu
+        type_menu = menu.addMenu(tr("map_window.menu_type", name=cat_info['name']))
         type_menu.setStyleSheet(menu.styleSheet())
         for cid, cdata in POINT_CATEGORIES.items():
             mark = "✓ " if cur_cat == cid else ""
             act = type_menu.addAction(f"{mark}{cdata['emoji']} {cdata['name']}")
             act.triggered.connect(lambda checked=False, c=cid: self._set_point_category(point, c))
 
-        # 2. Якщо це база — кнопка редагування нікнеймів гравців
+        # 2. For a base: edit player nicknames
         if cur_cat == "base":
-            act_players = menu.addAction("👥 Гравці бази...")
+            act_players = menu.addAction(tr("map_window.menu_base_players"))
             act_players.triggered.connect(lambda: self._edit_base_players(point))
 
-        # 3. Перейменування назви
-        act_rename = menu.addAction("✏️ Перейменувати назву точки...")
+        # 3. Rename the point
+        act_rename = menu.addAction(tr("map_window.menu_rename"))
         act_rename.triggered.connect(lambda: self._rename_point(point))
         menu.addSeparator()
 
         colors = [
-            ("🔴 Червона шпилька", "#ef4444"),
-            ("🔵 Блакитна шпилька", "#38bdf8"),
-            ("🟢 Смарагдова шпилька", "#10b981"),
-            ("🟡 Золота шпилька", "#f59e0b"),
-            ("🟣 Фіолетова шпилька", "#a855f7"),
-            ("🌸 Рожева шпилька", "#ec4899"),
-            ("🟠 Помаранчева шпилька", "#f97316"),
-            ("⚪ Світла шпилька", "#f8fafc"),
+            (tr("map_window.pin_red"), "#ef4444"),
+            (tr("map_window.pin_blue"), "#38bdf8"),
+            (tr("map_window.pin_emerald"), "#10b981"),
+            (tr("map_window.pin_gold"), "#f59e0b"),
+            (tr("map_window.pin_purple"), "#a855f7"),
+            (tr("map_window.pin_pink"), "#ec4899"),
+            (tr("map_window.pin_orange"), "#f97316"),
+            (tr("map_window.pin_light"), "#f8fafc"),
         ]
 
-        color_menu = menu.addMenu("🎨 Змінити колір шпильки")
+        color_menu = menu.addMenu(tr("map_window.menu_change_color"))
         color_menu.setStyleSheet(menu.styleSheet())
         for label, hex_code in colors:
             act = color_menu.addAction(label)
             act.triggered.connect(lambda checked=False, c=hex_code: self.points_mgr.update_point_color(point.id, c))
 
-        act_custom = color_menu.addAction("🎨 Обрати власний колір...")
+        act_custom = color_menu.addAction(tr("map.custom_color"))
         def pick_custom():
             col = open_safe_color_dialog(
                 self,
                 getattr(point, "color", None) or "#38bdf8",
-                f"Колір шпильки: {point.name}"
+                tr("map_window.pin_color_dialog", name=point.name)
             )
             if col:
                 self.points_mgr.update_point_color(point.id, col)
         act_custom.triggered.connect(pick_custom)
 
         menu.addSeparator()
-        act_copy = menu.addAction("📋 Скопіювати координати")
+        act_copy = menu.addAction(tr("map_window.menu_copy_coords"))
         act_copy.triggered.connect(lambda: QApplication.clipboard().setText(point.raw_coord))
 
-        act_del = menu.addAction("🗑️ Видалити точку")
+        act_del = menu.addAction(tr("map_window.menu_delete"))
         act_del.triggered.connect(lambda: self.points_mgr.delete_point(point.id))
 
         menu.exec(global_pos)
@@ -305,8 +318,8 @@ class MapCanvasWidget(QWidget):
     def _edit_base_players(self, point: MapPoint):
         dialog = QInputDialog(self)
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
-        dialog.setWindowTitle("Гравці бази")
-        dialog.setLabelText(f"Введіть нікнейми гравців бази через кому:\n{point.name} [{point.sector} {point.keypad}]")
+        dialog.setWindowTitle(tr("map_window.dlg_players_title"))
+        dialog.setLabelText(tr("map_window.dlg_players_label", name=point.name, sector=point.sector, keypad=point.keypad))
         dialog.setTextValue(getattr(point, "players", ""))
         dialog.setStyleSheet("""
             QInputDialog { background-color: #0f172a; color: #f8fafc; }
@@ -323,8 +336,8 @@ class MapCanvasWidget(QWidget):
     def _rename_point(self, point: MapPoint):
         dialog = QInputDialog(self)
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
-        dialog.setWindowTitle("Перейменування точки")
-        dialog.setLabelText("Введіть нову назву точки:")
+        dialog.setWindowTitle(tr("map_window.dlg_rename_title"))
+        dialog.setLabelText(tr("map_window.dlg_rename_label"))
         dialog.setTextValue("" if point.name == "None" else point.name)
         dialog.setStyleSheet("""
             QInputDialog { background-color: #0f172a; color: #f8fafc; }
@@ -363,7 +376,7 @@ class MapCanvasWidget(QWidget):
             img_w = cur_img.width()
             img_h = cur_img.height()
 
-            # Нормалізовані координати під курсором
+            # Normalized coordinates under the cursor
             mx = (event.pos().x() - self.pan_x) / (img_w * self.zoom)
             my = (event.pos().y() - self.pan_y) / (img_h * self.zoom)
 
@@ -372,7 +385,7 @@ class MapCanvasWidget(QWidget):
                 sec, k = get_sector_info(mx, my)
                 self.cursor_coords_changed.emit(game_x, game_y, sec, k)
 
-                # Зміна курсора та спливаюча підказка над міткою
+                # Cursor change and tooltip over a marker
                 hovered = self._find_marker_at(event.pos())
                 if hovered:
                     self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -380,17 +393,17 @@ class MapCanvasWidget(QWidget):
                     cat_info = get_category_info(cur_cat)
                     lines = [
                         f"{cat_info['emoji']} {hovered.name}",
-                        f"🏷️ Тип: {cat_info['name']}"
+                        tr("map_window.tip_type", name=cat_info['name'])
                     ]
                     if cur_cat == "base":
                         pl = getattr(hovered, "players", "")
                         if pl and pl.strip():
-                            lines.append(f"👥 Гравці бази: {pl.strip()}")
+                            lines.append(tr("map_window.tip_players", players=pl.strip()))
                         else:
-                            lines.append("👥 Гравці бази: (не вказано)")
+                            lines.append(tr("map_window.tip_players_none"))
 
-                    lines.append(f"📍 Сектор: {hovered.sector} ({hovered.keypad})")
-                    lines.append(f"🕒 Час: {hovered.date_time}")
+                    lines.append(tr("map_window.tip_sector", sector=hovered.sector, keypad=hovered.keypad))
+                    lines.append(tr("map_window.tip_time", time=hovered.date_time))
                     lines.append(f"🌐 X={hovered.x:.1f} Y={hovered.y:.1f} Z={hovered.z:.1f}")
 
                     QToolTip.showText(
@@ -419,47 +432,47 @@ class MapCanvasWidget(QWidget):
         img_w = cur_img.width()
         img_h = cur_img.height()
 
-        # Радіус кліку на маркер
+        # Marker hit radius
         hit_radius = 18.0
 
         for pt in self.points_mgr.get_points():
             sx = self.pan_x + pt.norm_x * img_w * self.zoom
             sy = self.pan_y + pt.norm_y * img_h * self.zoom
-            # Перевіряємо як голівку шпильки (sy - 16), так і вістря (sy)
+            # Check both the pin head (sy - 16) and the tip (sy)
             dist_head = math.hypot(pos.x() - sx, pos.y() - (sy - 16.0))
             dist_tip = math.hypot(pos.x() - sx, pos.y() - sy)
             if min(dist_head, dist_tip) <= hit_radius:
                 return pt
         return None
 
-    # ──────────────────────── Рендеринг ────────────────────────
+    # ──────────────────────── Rendering ────────────────────────
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-        # 1. Темний фон простору навколо карти
+        # 1. Dark background around the map
         painter.fillRect(self.rect(), QColor("#090d16"))
 
         cur_img = self.map_images.get(self.current_variant)
         if not cur_img or cur_img.isNull():
             painter.setPen(QColor("#38bdf8"))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Завантаження карти SCUM Island...")
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, tr("map_window.loading"))
             return
 
         img_w = cur_img.width()
         img_h = cur_img.height()
         map_rect = QRectF(self.pan_x, self.pan_y, img_w * self.zoom, img_h * self.zoom)
 
-        # 2. Малюємо саму мапу
+        # 2. Draw the map itself
         painter.drawImage(map_rect, cur_img)
 
-        # 3. Сітка секторів та кейпадів
+        # 3. Sector and keypad grid
         if self.show_grid:
             self._draw_grid(painter, map_rect)
 
-        # 4. Точки та мітки
+        # 4. Points and markers
         self._draw_markers(painter, map_rect)
 
     def _draw_grid(self, painter: QPainter, rect: QRectF):
@@ -468,7 +481,7 @@ class MapCanvasWidget(QWidget):
         x0 = rect.x()
         y0 = rect.y()
 
-        # Підсітка кейпадів (3x3 всередині кожного сектора)
+        # Keypad subgrid (3x3 inside each sector)
         if self.show_keypads and self.zoom >= 0.8:
             keypad_pen = QPen(QColor(56, 189, 248, 40), 1, Qt.PenStyle.DotLine)
             painter.setPen(keypad_pen)
@@ -479,7 +492,7 @@ class MapCanvasWidget(QWidget):
                     painter.drawLine(QPointF(px, y0), QPointF(px, y0 + mh))
                     painter.drawLine(QPointF(x0, py), QPointF(x0 + mw, py))
 
-        # Основна сітка 5x5 секторів (D0..D4 .. Z0..Z4)
+        # Main 5x5 sector grid (D0..D4 .. Z0..Z4)
         grid_pen = QPen(QColor(56, 189, 248, 120), 1.5, Qt.PenStyle.SolidLine)
         painter.setPen(grid_pen)
 
@@ -489,11 +502,11 @@ class MapCanvasWidget(QWidget):
             painter.drawLine(QPointF(px, y0), QPointF(px, y0 + mh))
             painter.drawLine(QPointF(x0, py), QPointF(x0 + mw, py))
 
-        # Рамка всієї карти
+        # Map border
         painter.setPen(QPen(QColor("#38bdf8"), 2, Qt.PenStyle.SolidLine))
         painter.drawRect(rect)
 
-        # Підписи секторів (D4..D0, C4..C0, B4..B0, A4..A0, Z4..Z0)
+        # Sector labels (D4..D0, C4..C0, B4..B0, A4..A0, Z4..Z0)
         rows = ["D", "C", "B", "A", "Z"]
         cols = ["4", "3", "2", "1", "0"]
 
@@ -510,7 +523,7 @@ class MapCanvasWidget(QWidget):
                 cx = x0 + c_idx * cell_w + 8
                 cy = y0 + r_idx * cell_h + 18
 
-                # Тінь для читабельності
+                # Shadow for readability
                 painter.setPen(QColor(0, 0, 0, 200))
                 painter.drawText(QPointF(cx + 1, cy + 1), label)
 
@@ -527,12 +540,12 @@ class MapCanvasWidget(QWidget):
         if not points:
             return
 
-        # Малюємо мітки від старих до нових (щоб нові були зверху)
+        # Draw markers oldest to newest (newest on top)
         for pt in reversed(points):
             sx = x0 + pt.norm_x * mw
             sy = y0 + pt.norm_y * mh
 
-            # Перевіряємо, чи потрапляє маркер у видиму область
+            # Skip markers outside the visible area
             if not (0 <= sx <= self.width() and 0 <= sy <= self.height()):
                 continue
 
@@ -542,12 +555,12 @@ class MapCanvasWidget(QWidget):
             pt_color_str = getattr(pt, "color", None) or cat_info["default_color"]
             pin_color = QColor(pt_color_str)
 
-            # 1. Тінь під вістрям шпильки на поверхні карти
+            # 1. Shadow under the pin tip on the map surface
             painter.setBrush(QBrush(QColor(0, 0, 0, 160)))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(QPointF(sx, sy + 0.5), 4.5, 2.0)
 
-            # 2. Зовнішній ефект сяйва для активної шпильки
+            # 2. Outer glow for the active pin
             if is_active:
                 glow_col = QColor(pin_color)
                 glow_col.setAlpha(60)
@@ -558,35 +571,35 @@ class MapCanvasWidget(QWidget):
                 painter.setBrush(QBrush(glow_col))
                 painter.drawEllipse(QPointF(sx, sy - 16.0), 14.0, 14.0)
 
-            # 3. Шпилька (Векторний шлях: округла голівка зверху та гостре вістря точно на точці)
+            # 3. Pin (vector path: round head on top, sharp tip exactly on the point)
             pin_path = QPainterPath()
-            pin_path.moveTo(sx, sy)  # гострий кінчик точно на координаті
+            pin_path.moveTo(sx, sy)  # sharp tip exactly on the coordinate
             pin_path.quadTo(sx + 10.0, sy - 8.0, sx + 10.0, sy - 16.0)
             pin_path.arcTo(sx - 10.0, sy - 26.0, 20.0, 20.0, 0, 180)
             pin_path.quadTo(sx - 10.0, sy - 8.0, sx, sy)
             pin_path.closeSubpath()
 
-            # Заливка обраним кольором та контрастна обводка шпильки
+            # Fill with the chosen color and a contrasting outline
             painter.setBrush(QBrush(pin_color))
             border_color = QColor("#ffffff") if is_active else QColor("#090d16")
             border_width = 1.8 if is_active else 1.2
             painter.setPen(QPen(border_color, border_width))
             painter.drawPath(pin_path)
 
-            # 4. Внутрішній вміст шпильки (емодзі або біла точка для класичної мітки)
+            # 4. Pin content (emoji, or a white dot for the classic marker)
             if cur_cat == "default":
-                # Класична шпилька: акуратне внутрішнє біле вічко
+                # Classic pin: small white inner dot
                 painter.setBrush(QBrush(QColor("#ffffff")))
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawEllipse(QPointF(sx, sy - 16.0), 2.8, 2.8)
             else:
-                # Тематичний емодзі відповідної категорії (🚗, ✈️, 🏍️, 🚤, 📦, 🏠)
+                # Category emoji (🚗, ✈️, 🏍️, 🚤, 📦, 🏠)
                 painter.setFont(QFont("Segoe UI Emoji", 10))
                 painter.setPen(QColor("#ffffff"))
                 emoji_rect = QRectF(sx - 10.0, sy - 26.0, 20.0, 20.0)
                 painter.drawText(emoji_rect, Qt.AlignmentFlag.AlignCenter, cat_info["emoji"])
 
-            # 5. Компактна плашка з назвою над шпилькою
+            # 5. Compact name tag above the pin
             emoji_tag = f"{cat_info['emoji']} " if cur_cat != "default" else ""
             if pt.name != "None":
                 label_text = f"{emoji_tag}{pt.name} [{pt.sector}]"
@@ -602,24 +615,24 @@ class MapCanvasWidget(QWidget):
 
             tag_rect = QRectF(sx - tw / 2.0, sy - 34.0 - th, tw, th)
 
-            # Фон плашки
+            # Tag background
             painter.setBrush(QBrush(QColor(11, 15, 25, 230)))
             painter.setPen(QPen(pin_color, 1))
             painter.drawRoundedRect(tag_rect, 4, 4)
 
-            # Текст назви
+            # Name text
             painter.setPen(QColor("#ffffff") if is_active else QColor("#f1f5f9"))
             painter.drawText(tag_rect, Qt.AlignmentFlag.AlignCenter, label_text)
 
 
 class MapWindow(QWidget):
     """
-    Головне вікно інтерактивної карти SCUM:
-    - Midnight Cyan стиль
-    - Верхня панель інструментів (перемикання супутник/тактика, сітка, зум)
-    - Інформаційний бейдж поточних координат під курсором
-    - Перетягування (Drag) та зміна розмірів (Resize)
-    - Гаряча клавіша відкриття Ctrl+M
+    Main interactive SCUM map window:
+    - Midnight Cyan style
+    - Top toolbar (satellite/tactical switch, grid, zoom)
+    - Badge with the current cursor coordinates
+    - Drag to move and resize
+    - Ctrl+M hotkey to open
     """
     closed = pyqtSignal()
     point_selected = pyqtSignal(object)  # MapPoint
@@ -647,7 +660,7 @@ class MapWindow(QWidget):
         self.main_layout.setContentsMargins(8, 8, 8, 8)
         self.main_layout.setSpacing(0)
 
-        # Контейнер картки
+        # Card container
         self.container = QFrame(self)
         self.container.setStyleSheet("""
             QFrame#map_card {
@@ -661,16 +674,16 @@ class MapWindow(QWidget):
         c_layout.setContentsMargins(6, 6, 6, 6)
         c_layout.setSpacing(4)
 
-        # 1. Полотно карти (створюємо спочатку)
+        # 1. Map canvas (created first)
         self.canvas = MapCanvasWidget(self.cfg, self.points_mgr, self.container)
         self.canvas.cursor_coords_changed.connect(self._on_cursor_coords_changed)
         self.canvas.point_clicked.connect(self.point_selected.emit)
 
-        # 2. Верхній бар
+        # 2. Top bar
         self._build_top_bar(c_layout)
         c_layout.addWidget(self.canvas, 1)
 
-        # 3. Нижня панель статусів та зміна розміру
+        # 3. Bottom status bar and resize grip
         self._build_bottom_bar(c_layout)
 
         self.main_layout.addWidget(self.container)
@@ -683,13 +696,13 @@ class MapWindow(QWidget):
         h.setContentsMargins(6, 2, 6, 2)
         h.setSpacing(8)
 
-        # Заголовок
+        # Title
         lbl_title = QLabel("🗺 <b>SCUM Island Map</b>")
         lbl_title.setStyleSheet("color: #38bdf8; font-size: 13px;")
         h.addWidget(lbl_title)
 
-        # Інфо курсора
-        self.lbl_cursor = QLabel("📍 Курсор: Наведіть на карту")
+        # Cursor info
+        self.lbl_cursor = QLabel(tr("map_window.cursor_hint"))
         self.lbl_cursor.setStyleSheet("""
             QLabel {
                 background-color: #0f172a;
@@ -705,7 +718,7 @@ class MapWindow(QWidget):
 
         h.addStretch()
 
-        # Кнопки вибору карти
+        # Map selection buttons
         btn_style = """
             QPushButton {
                 background-color: #1e293b;
@@ -723,19 +736,19 @@ class MapWindow(QWidget):
             }
         """
 
-        self.btn_var = QPushButton("🛰 Супутник" if self.canvas.current_variant == "regular" else "🎯 Тактика")
+        self.btn_var = QPushButton(tr("map_window.variant_satellite") if self.canvas.current_variant == "regular" else tr("map_window.variant_tactical"))
         self.btn_var.setStyleSheet(btn_style)
         self.btn_var.clicked.connect(self._toggle_variant)
         h.addWidget(self.btn_var)
 
-        self.btn_grid = QPushButton("▦ Сітка")
+        self.btn_grid = QPushButton(tr("map_window.grid"))
         self.btn_grid.setCheckable(True)
         self.btn_grid.setChecked(self.canvas.show_grid)
         self.btn_grid.setStyleSheet(btn_style)
         self.btn_grid.clicked.connect(self.canvas.toggle_grid)
         h.addWidget(self.btn_grid)
 
-        # Зум кнопки
+        # Zoom buttons
         btn_zoom_in = QPushButton("➕")
         btn_zoom_in.setFixedSize(26, 26)
         btn_zoom_in.setStyleSheet(btn_style)
@@ -749,15 +762,15 @@ class MapWindow(QWidget):
         h.addWidget(btn_zoom_out)
 
         btn_reset = QPushButton("⟲")
-        btn_reset.setToolTip("Центрувати всю карту")
+        btn_reset.setToolTip(tr("map_window.tip_reset"))
         btn_reset.setFixedSize(26, 26)
         btn_reset.setStyleSheet(btn_style)
         btn_reset.clicked.connect(self.canvas.reset_view)
         h.addWidget(btn_reset)
 
-        # Закрити
+        # Close
         btn_close = QPushButton("✕")
-        btn_close.setToolTip("Закрити (Ctrl+M)")
+        btn_close.setToolTip(tr("map_window.tip_close"))
         btn_close.setFixedSize(26, 26)
         btn_close.setStyleSheet("""
             QPushButton {
@@ -786,7 +799,7 @@ class MapWindow(QWidget):
         h.setContentsMargins(6, 0, 0, 0)
         h.setSpacing(6)
 
-        lbl_hint = QLabel("💡 <b>Коліщатко</b>: наближення | <b>Drag</b>: рух | <b>Клік на маркер</b>: вибір")
+        lbl_hint = QLabel(tr("map_window.hint"))
         lbl_hint.setStyleSheet("color: #64748b; font-size: 11px;")
         h.addWidget(lbl_hint)
 
@@ -802,7 +815,7 @@ class MapWindow(QWidget):
     def _toggle_variant(self):
         new_v = "tactical" if self.canvas.current_variant == "regular" else "regular"
         self.canvas.set_variant(new_v)
-        self.btn_var.setText("🛰 Супутник" if new_v == "regular" else "🎯 Тактика")
+        self.btn_var.setText(tr("map_window.variant_satellite") if new_v == "regular" else tr("map_window.variant_tactical"))
 
     def _step_zoom(self, factor: float):
         w_view = self.canvas.width()
@@ -819,12 +832,12 @@ class MapWindow(QWidget):
         self.canvas.update()
 
     def _on_cursor_coords_changed(self, x: float, y: float, sec: str, keypad: str):
-        self.lbl_cursor.setText(f"📍 <b>{sec}</b> ({keypad}) | X={int(x)} Y={int(y)}")
+        self.lbl_cursor.setText(tr("map_window.cursor_info", sector=sec, keypad=keypad, x=int(x), y=int(y)))
 
     def focus_point(self, point: MapPoint):
         self.canvas.focus_point(point)
 
-    # ──────────────────────── Переміщення вікна ────────────────────────
+    # ──────────────────────── Window dragging ────────────────────────
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton and event.pos().y() <= 45:
@@ -864,7 +877,7 @@ class MapWindow(QWidget):
 
         if saved_x is None or saved_x < 0 or saved_y is None or saved_y < 0:
             x = sx + (sw - w) // 2
-            # Зсуваємо трохи вгору, щоб унизу помістився список точок
+            # Shift slightly up so the points list fits below
             y = sy + max(20, (sh - h - 250) // 2)
         else:
             x = max(sx, min(saved_x, sx + sw - w))
@@ -880,7 +893,7 @@ class MapWindow(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # При першому відображенні ініціалізуємо вид
+        # Initialize the view on first show
         self.canvas.reset_view()
 
     def keyPressEvent(self, event: QKeyEvent):

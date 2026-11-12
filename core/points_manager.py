@@ -1,24 +1,42 @@
 import json
+import logging
 import os
-from typing import List, Optional, Dict, Any
+import shutil
+import time
+from dataclasses import dataclass
+from typing import Any, List, Optional
+
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from core.coordinate_parser import MapPoint, POINT_CATEGORIES, detect_category_from_name
 from core.config_manager import get_portable_config_path
+from core.coordinate_parser import POINT_CATEGORIES, MapPoint, detect_category_from_name
+
+log = logging.getLogger("scum.points")
+
+EXPORT_FORMAT = "scum-waypoints"
+EXPORT_VERSION = 1
+
+
+@dataclass
+class ImportResult:
+    added: int = 0
+    duplicates: int = 0
+    invalid: int = 0
 
 
 class PointsManager(QObject):
     """
-    Менеджер збережених точок координат:
-    - Зберігає точки у файлі points.json (поряд із config.json або .exe)
-    - Гарантує збереження між перезапусками гри та додатку
-    - Сортує точки від нових до старих
-    - Сповіщає інтерфейс через PyQt сигнали
+    Manager of saved coordinate points:
+    - Stores points in points.json (next to config.json or the .exe)
+    - Persists them across game and app restarts
+    - Sorts points from newest to oldest
+    - Notifies the UI via PyQt signals
     """
     point_added = pyqtSignal(object)      # MapPoint
     point_updated = pyqtSignal(object)    # MapPoint
     point_deleted = pyqtSignal(str)       # point_id
     points_cleared = pyqtSignal()
+    points_reloaded = pyqtSignal()        # whole list replaced (import)
 
     def __init__(self, file_path: Optional[str] = None):
         super().__init__()
@@ -32,7 +50,7 @@ class PointsManager(QObject):
         self._points = []
         if os.path.exists(self.file_path):
             try:
-                with open(self.file_path, "r", encoding="utf-8") as f:
+                with open(self.file_path, encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, list):
                         for item in data:
@@ -40,33 +58,100 @@ class PointsManager(QObject):
                                 pt = MapPoint.from_dict(item)
                                 self._points.append(pt)
                             except Exception as pe:
-                                print(f"[PointsManager] Помилка читання точки: {pe}")
+                                log.warning("Failed to read point: %s", pe)
             except Exception as e:
-                print(f"[PointsManager] Помилка завантаження {self.file_path}: {e}")
+                log.error("Failed to load %s: %s", self.file_path, e)
 
-        # Сортуємо від найновіших до найстаріших
+        # Sort from newest to oldest
         self._points.sort(key=lambda p: p.created_timestamp, reverse=True)
 
     def save(self):
+        """Write points.json atomically (temp file + replace) so a crash never corrupts it."""
+        tmp_path = self.file_path + ".tmp"
         try:
             parent_dir = os.path.dirname(self.file_path)
             if parent_dir and not os.path.exists(parent_dir):
                 os.makedirs(parent_dir, exist_ok=True)
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump([p.to_dict() for p in self._points], f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, self.file_path)
+        except OSError as e:
+            log.error("Could not save %s: %s", self.file_path, e)
 
-            data = [p.to_dict() for p in self._points]
-            with open(self.file_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"[PointsManager] Помилка збереження {self.file_path}: {e}")
+    # ── import / export ──────────────────────────────────────────────
+    def export_to_file(self, path: str, points: Optional[List[MapPoint]] = None) -> int:
+        """Export waypoints (all, or the given subset) to a portable JSON file. Returns the count."""
+        items = self._points if points is None else points
+        payload = {
+            "format": EXPORT_FORMAT,
+            "version": EXPORT_VERSION,
+            "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "points": [p.to_dict() for p in items],
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+        return len(items)
+
+    @staticmethod
+    def _extract_point_dicts(data: Any) -> List[Any]:
+        if isinstance(data, list):                      # legacy points.json
+            return data
+        if isinstance(data, dict) and isinstance(data.get("points"), list):
+            return data["points"]
+        raise ValueError("Unrecognised waypoint file format")
+
+    def import_from_file(self, path: str, replace: bool = False) -> ImportResult:
+        """Import waypoints from JSON. ``replace=True`` swaps the whole list (a .bak copy is kept).
+
+        Raises ``ValueError`` / ``OSError`` for unreadable or unrecognised files; individual bad
+        entries are skipped and counted in ``ImportResult.invalid``.
+        """
+        with open(path, encoding="utf-8") as f:
+            raw_items = self._extract_point_dicts(json.load(f))
+
+        result = ImportResult()
+        parsed: List[MapPoint] = []
+        for item in raw_items:
+            try:
+                if not isinstance(item, dict) or "x" not in item or "y" not in item:
+                    raise ValueError("missing coordinates")
+                parsed.append(MapPoint.from_dict(item))
+            except (ValueError, TypeError, KeyError):
+                result.invalid += 1
+
+        if replace and os.path.exists(self.file_path):
+            try:
+                shutil.copy2(self.file_path, self.file_path + ".bak")
+            except OSError as exc:
+                log.warning("Could not back up points before import: %s", exc)
+
+        existing = [] if replace else list(self._points)
+        known_ids = {p.id for p in existing}
+        known_coords = {(round(p.x, 1), round(p.y, 1), round(p.z, 1), p.name) for p in existing}
+        for pt in parsed:
+            key = (round(pt.x, 1), round(pt.y, 1), round(pt.z, 1), pt.name)
+            if pt.id in known_ids or key in known_coords:
+                result.duplicates += 1
+                continue
+            known_ids.add(pt.id)
+            known_coords.add(key)
+            existing.append(pt)
+            result.added += 1
+
+        existing.sort(key=lambda p: p.created_timestamp, reverse=True)
+        self._points = existing
+        self.save()
+        self.points_reloaded.emit()
+        return result
 
     def add_point(self, point: MapPoint) -> bool:
-        # Захист від дублікатів (однакові координати менше ніж за 2 секунди)
+        # Duplicate guard (same coordinates within 2 seconds)
         if self._points:
             first = self._points[0]
             if first.raw_coord == point.raw_coord and abs(first.created_timestamp - point.created_timestamp) < 2.0:
                 return False
 
-        # Додаємо на початок списку (найновіша точка зверху)
+        # Insert at the start of the list (newest point on top)
         self._points.insert(0, point)
         self.save()
         self.point_added.emit(point)
@@ -77,7 +162,7 @@ class PointsManager(QObject):
         for pt in self._points:
             if pt.id == point_id:
                 pt.name = clean_name
-                # Якщо категорія ще стандартна, спробуємо визначити її з нової назви
+                # If the category is still default, try to detect it from the new name
                 if pt.category == "default":
                     detected = detect_category_from_name(clean_name)
                     if detected != "default":
@@ -95,7 +180,7 @@ class PointsManager(QObject):
             if pt.id == point_id:
                 old_cat = pt.category
                 pt.category = new_category
-                # Якщо колір був за замовчуванням для старої категорії, оновимо до нової
+                # If the color was the default for the old category, update it to the new one
                 old_default = POINT_CATEGORIES.get(old_cat, {}).get("default_color")
                 if not pt.color or pt.color == old_default:
                     pt.color = POINT_CATEGORIES[new_category]["default_color"]
