@@ -46,4 +46,4 @@ See [docs/ADDING_A_LANGUAGE.md](docs/ADDING_A_LANGUAGE.md).
 
 1. Bump `__version__` in `core/version.py` and `version_info.txt`, update `CHANGELOG.md`.
 2. Commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z` — the workflow builds both executables.
-3. Publish the draft release on GitHub (the in-app updater picks up the `.exe` asset of the latest release).
+3. The workflow publishes the release using `.github/release-notes/vX.Y.Z.md` (write that file before tagging); the in-app updater installs the `.exe` asset of the latest release.
