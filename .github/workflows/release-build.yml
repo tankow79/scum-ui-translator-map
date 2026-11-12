@@ -28,6 +28,14 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm SCUM_Chat_Translator.spec
           python -m PyInstaller --noconfirm SCUM_Chat_Translator_Portable.spec
+      - name: Package full zip (exe + certificate installer + instructions)
+        shell: pwsh
+        run: |
+          $dir = "pkg/SCUM_Chat_Translator"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item dist/SCUM_Chat_Translator.exe $dir
+          Copy-Item release/install_cert.bat, release/SCUM_Chat_Translator.cer, release/INSTRUCTION_UA.txt, release/INSTRUCTION_EN.txt $dir
+          Compress-Archive -Path "$dir/*" -DestinationPath "dist/SCUM_Chat_Translator_${{ github.ref_name }}.zip"
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
@@ -37,3 +45,4 @@ jobs:
           files: |
             dist/SCUM_Chat_Translator.exe
             dist/SCUM_Chat_Translator_Portable.exe
+            dist/SCUM_Chat_Translator_${{ github.ref_name }}.zip
