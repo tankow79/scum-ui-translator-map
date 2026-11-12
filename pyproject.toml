@@ -1,0 +1,40 @@
+[project]
+name = "scum-chat-translator"
+version = "2.1.0"
+description = "SCUM tactical map and real-time chat translator overlay for Windows"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "PyQt6>=6.6.0",
+    "requests>=2.31.0",
+    "pynput>=1.7.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "pyinstaller>=6.9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [".venv", "build", "dist", "release"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",   # long lines: Qt stylesheets and locale strings
+    "B008",
+    "UP006", "UP007", "UP035", "UP045",  # keep typing.Optional/List style used across the code base
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402", "E701", "B007", "UP031", "B011"]
+"main.py" = ["E402"]

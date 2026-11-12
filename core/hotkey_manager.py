@@ -1,11 +1,15 @@
 import ctypes
+import logging
 import threading
-from typing import Callable, Dict, Tuple, Optional, Set
+from typing import Callable, Dict, Optional, Tuple
+
 from pynput import keyboard
+
+log = logging.getLogger("scum.hotkeys")
 
 user32 = ctypes.windll.user32
 
-# Віртуальні коди клавіш-модифікаторів у Windows
+# Windows virtual key codes for modifier keys
 VK_CONTROL = 0x11
 VK_SHIFT = 0x10
 VK_MENU = 0x12  # Alt
@@ -31,7 +35,7 @@ NAME_TO_VK["space"] = 32
 
 def key_to_vk(key) -> Optional[int]:
     """
-    Отримує апаратний Virtual Key (VK) код для клавіші незалежно від поточної мовної розкладки.
+    Gets the hardware Virtual Key (VK) code for a key regardless of the current keyboard layout.
     """
     if hasattr(key, 'vk') and key.vk is not None:
         return key.vk
@@ -41,8 +45,8 @@ def key_to_vk(key) -> Optional[int]:
 
 def parse_hotkey_string(hotkey_str: str) -> Optional[Tuple[bool, bool, bool, int]]:
     """
-    Парсить рядок типу 'Ctrl+T', 'F9', 'Ctrl+Shift+T', 'Alt+F8', 'Escape', 'Enter'.
-    Повертає кортеж: (req_ctrl, req_alt, req_shift, target_vk).
+    Parses strings like 'Ctrl+T', 'F9', 'Ctrl+Shift+T', 'Alt+F8', 'Escape', 'Enter'.
+    Returns a tuple: (req_ctrl, req_alt, req_shift, target_vk).
     """
     if not hotkey_str:
         return None
@@ -86,9 +90,9 @@ def format_hotkey(req_ctrl: bool, req_alt: bool, req_shift: bool, vk: int) -> st
 
 class GlobalHotkeyManager:
     """
-    Менеджер глобальних гарячих клавіш для Windows.
-    Працює на рівні Virtual Key (VK) кодів — клавіші спрацьовують однаково,
-    незалежно від того, яка розкладка увімкнена (українська, англійська тощо).
+    Global hotkey manager for Windows.
+    Works on Virtual Key (VK) codes, so hotkeys fire the same
+    regardless of the active keyboard layout (Ukrainian, English, etc.).
     """
     def __init__(self):
         # (ctrl, alt, shift, vk) -> callback
@@ -102,7 +106,7 @@ class GlobalHotkeyManager:
         if parsed:
             with self._lock:
                 self._handlers[parsed] = callback
-                print(f"[Hotkeys] Зареєстровано гарячу клавішу: {hotkey_str} -> {parsed}")
+                log.info("Registered hotkey: %s -> %s", hotkey_str, parsed)
 
     def clear(self):
         with self._lock:
@@ -133,11 +137,11 @@ class GlobalHotkeyManager:
         if vk is None:
             return
 
-        # Пропускаємо натискання самих лише модифікаторів
+        # Skip presses of bare modifiers
         if vk in (VK_CONTROL, 162, 163, VK_SHIFT, 160, 161, VK_MENU, 164, 165):
             return
 
-        # Опитуємо реальний стан модифікаторів через WinAPI GetAsyncKeyState
+        # Poll the real modifier state via WinAPI GetAsyncKeyState
         is_ctrl = bool(user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
         is_alt = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
         is_shift = bool(user32.GetAsyncKeyState(VK_SHIFT) & 0x8000)
@@ -151,4 +155,4 @@ class GlobalHotkeyManager:
             try:
                 handler()
             except Exception as e:
-                print(f"[Hotkeys] Помилка виклику обробника: {e}")
+                log.error("Hotkey handler failed: %s", e)

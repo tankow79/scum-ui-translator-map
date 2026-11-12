@@ -1,282 +1,382 @@
-"""
-Діалогове вікно оновлення програми SCUM Chat Translator.
-Відображає інформацію про новий реліз, список змін, гарантію збереження
-персональних налаштувань та виконує завантаження та безшовне оновлення в 1 клік.
-"""
+"""Compact, Steam-style update window: prompt -> download with progress -> install -> restart."""
 
+import logging
 import os
+import subprocess
+import threading
+import time
 import webbrowser
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QTextEdit, QProgressBar, QFrame, QApplication
-)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QIcon
+from typing import Optional
 
-from core.version import __version__, GITHUB_REPO_URL
-from core.updater import UpdateInfo, UpdateDownloader, UpdateInstaller
+from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from core.i18n import tr
+from core.updater import UpdateDownloader, UpdateError, UpdateInfo, UpdateInstaller
+from core.version import GITHUB_REPO_URL, __version__
+
+log = logging.getLogger("scum.update_dialog")
+
+STYLE = """
+QFrame#card { background-color: #0f1623; border: 1px solid #25324a; border-radius: 10px; }
+QLabel { color: #cbd5e1; font-family: 'Segoe UI', Arial, sans-serif; background: transparent; }
+QLabel#title { color: #f1f5f9; font-size: 15px; font-weight: 600; }
+QLabel#sub { color: #8fa3bf; font-size: 12px; }
+QLabel#info { color: #8fa3bf; font-size: 11px; }
+QLabel#error { color: #f87171; font-size: 12px; }
+QTextEdit { background-color: #0b111c; color: #b6c4d8; border: 1px solid #1c2840; border-radius: 6px;
+            padding: 6px; font-size: 12px; font-family: 'Segoe UI', Arial, sans-serif; }
+QPushButton { background-color: #1a2438; color: #cbd5e1; border: 1px solid #2a3957; border-radius: 6px;
+              padding: 6px 16px; font-size: 12px; font-family: 'Segoe UI', Arial, sans-serif; }
+QPushButton:hover { background-color: #243350; color: #ffffff; }
+QPushButton#primary { background-color: #1a8fe3; border: 1px solid #3aa6f5; color: #ffffff; font-weight: 600; }
+QPushButton#primary:hover { background-color: #2b9df0; }
+QPushButton#close { background: transparent; border: none; color: #6b7d99; font-size: 14px; padding: 0 4px; }
+QPushButton#close:hover { color: #ffffff; }
+QPushButton#link { background: transparent; border: none; color: #4aa8ff; padding: 0; text-align: left; font-size: 11px; }
+QPushButton#link:hover { color: #8ccaff; }
+"""
+
+
+class SteamProgressBar(QWidget):
+    """Slim progress bar with a moving shimmer; supports an indeterminate mode."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(8)
+        self._value = 0.0           # 0..1
+        self._indeterminate = False
+        self._phase = 0.0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(30)
+
+    def set_value(self, fraction: float):
+        self._indeterminate = False
+        self._value = max(0.0, min(1.0, fraction))
+        self.update()
+
+    def set_indeterminate(self, on: bool = True):
+        self._indeterminate = on
+        self.update()
+
+    def _tick(self):
+        self._phase = (self._phase + 0.02) % 1.0
+        if self.isVisible():
+            self.update()
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect())
+        radius = rect.height() / 2
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#0b111c"))
+        p.drawRoundedRect(rect, radius, radius)
+
+        if self._indeterminate:
+            width = rect.width() * 0.3
+            x = (rect.width() + width) * self._phase - width
+            bar = QRectF(max(0.0, x), 0, min(width, rect.width() - max(0.0, x), x + width), rect.height())
+        else:
+            bar = QRectF(0, 0, rect.width() * self._value, rect.height())
+        if bar.width() <= 0:
+            return
+
+        grad = QLinearGradient(QPointF(bar.left(), 0), QPointF(bar.right(), 0))
+        grad.setColorAt(0.0, QColor("#1a8fe3"))
+        grad.setColorAt(1.0, QColor("#5cc0ff"))
+        p.setBrush(QBrush(grad))
+        p.drawRoundedRect(bar, radius, radius)
+
+        # shimmer highlight sweeping across the filled part
+        if not self._indeterminate:
+            sx = bar.width() * self._phase
+            shine = QLinearGradient(QPointF(sx - 40, 0), QPointF(sx + 40, 0))
+            shine.setColorAt(0.0, QColor(255, 255, 255, 0))
+            shine.setColorAt(0.5, QColor(255, 255, 255, 70))
+            shine.setColorAt(1.0, QColor(255, 255, 255, 0))
+            p.setClipRect(bar)
+            p.setBrush(QBrush(shine))
+            p.drawRoundedRect(bar, radius, radius)
+        p.setPen(QPen(Qt.PenStyle.NoPen))
 
 
 class UpdateDialog(QDialog):
-    """
-    Сучасне вікно сповіщення про доступне оновлення у стилі Midnight Cyan.
-    """
+    """States: prompt -> downloading -> installing -> restarting (or error)."""
+
+    _install_done = pyqtSignal(str)
+    _install_failed = pyqtSignal(str)
+
     def __init__(self, update_info: UpdateInfo, parent=None):
         super().__init__(parent)
         self.update_info = update_info
         self.downloader = UpdateDownloader()
+        self._downloaded_path: Optional[str] = None
+        self._drag_pos = None
+        self._started_at = 0.0
+        self._speed = 0.0
+        self._last_sample = (0.0, 0)
+        self._busy = False
 
-        self.setWindowTitle("🚀 Оновлення програми")
-        self.resize(520, 480)
-        self.setMinimumSize(460, 400)
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #0b0f19;
-                color: #e2e8f0;
-                font-family: 'Segoe UI', Arial, sans-serif;
-            }
-            QLabel {
-                color: #e2e8f0;
-            }
-            QTextEdit {
-                background-color: #0f172a;
-                color: #cbd5e1;
-                border: 1px solid #1e293b;
-                border-radius: 8px;
-                padding: 10px;
-                font-size: 13px;
-                line-height: 1.4;
-            }
-            QProgressBar {
-                background-color: #0f172a;
-                border: 1px solid #1e293b;
-                border-radius: 6px;
-                text-align: center;
-                color: #38bdf8;
-                font-weight: bold;
-                height: 22px;
-            }
-            QProgressBar::chunk {
-                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #0284c7, stop:1 #38bdf8);
-                border-radius: 5px;
-            }
-        """)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint
+                            | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setStyleSheet(STYLE)
+        self.setFixedWidth(420)
 
-        self.setup_ui()
-        self.setup_signals()
+        self._build_ui()
+        self.downloader.progress.connect(self._on_progress)
+        self.downloader.finished.connect(self._on_downloaded)
+        self.downloader.error.connect(self._on_error)
+        self._install_done.connect(self._on_installed)
+        self._install_failed.connect(self._on_error)
+        self._show_prompt()
 
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(14)
+    # ── UI construction ──────────────────────────────────────────────
+    def _build_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        card = QFrame()
+        card.setObjectName("card")
+        outer.addWidget(card)
 
-        # 1. Заголовок і версії
-        header_box = QHBoxLayout()
-        header_box.setSpacing(12)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(18, 14, 18, 16)
+        lay.setSpacing(10)
 
-        icon_lbl = QLabel("🚀")
-        icon_lbl.setFont(QFont("Segoe UI Emoji", 28))
-        header_box.addWidget(icon_lbl)
+        top = QHBoxLayout()
+        self.lbl_title = QLabel()
+        self.lbl_title.setObjectName("title")
+        top.addWidget(self.lbl_title, 1)
+        self.btn_close = QPushButton("✕")
+        self.btn_close.setObjectName("close")
+        self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_close.clicked.connect(self._close_requested)
+        top.addWidget(self.btn_close)
+        lay.addLayout(top)
 
-        v_title = QVBoxLayout()
-        v_title.setSpacing(2)
-        lbl_title = QLabel("Доступна нова версія!")
-        lbl_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #38bdf8;")
-        v_title.addWidget(lbl_title)
+        self.lbl_sub = QLabel()
+        self.lbl_sub.setObjectName("sub")
+        lay.addWidget(self.lbl_sub)
 
-        lbl_versions = QLabel(
-            f"Ваша версія: <span style='color: #94a3b8;'>v{__version__}</span> ➔ "
-            f"Нова версія: <span style='color: #22c55e; font-weight: bold;'>v{self.update_info.version}</span>"
-        )
-        lbl_versions.setStyleSheet("font-size: 13px;")
-        v_title.addWidget(lbl_versions)
-        header_box.addLayout(v_title)
-        header_box.addStretch()
+        self.bar = SteamProgressBar()
+        lay.addWidget(self.bar)
 
-        layout.addLayout(header_box)
+        self.lbl_info = QLabel()
+        self.lbl_info.setObjectName("info")
+        self.lbl_info.setWordWrap(True)
+        lay.addWidget(self.lbl_info)
 
-        # 2. Банер гарантії збереження налаштувань
-        shield_frame = QFrame()
-        shield_frame.setStyleSheet("""
-            QFrame {
-                background-color: rgba(34, 197, 94, 0.12);
-                border: 1px solid rgba(34, 197, 94, 0.35);
-                border-radius: 8px;
-                padding: 6px 10px;
-            }
-        """)
-        h_shield = QHBoxLayout(shield_frame)
-        h_shield.setContentsMargins(8, 6, 8, 6)
-        h_shield.setSpacing(8)
+        self.lbl_error = QLabel()
+        self.lbl_error.setObjectName("error")
+        self.lbl_error.setWordWrap(True)
+        lay.addWidget(self.lbl_error)
 
-        lbl_shield_icon = QLabel("🛡️")
-        lbl_shield_icon.setFont(QFont("Segoe UI Emoji", 16))
-        h_shield.addWidget(lbl_shield_icon)
+        self.btn_details = QPushButton()
+        self.btn_details.setObjectName("link")
+        self.btn_details.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_details.clicked.connect(self._toggle_notes)
+        lay.addWidget(self.btn_details, 0, Qt.AlignmentFlag.AlignLeft)
 
-        lbl_shield_text = QLabel(
-            "<b>100% безпечне оновлення:</b> Усі ваші налаштування (<b>config.json</b>) "
-            "та збережені координати (<b>points.json</b>) залишаться без змін!"
-        )
-        lbl_shield_text.setStyleSheet("color: #86efac; font-size: 12px;")
-        lbl_shield_text.setWordWrap(True)
-        h_shield.addWidget(lbl_shield_text, 1)
+        self.notes = QTextEdit()
+        self.notes.setReadOnly(True)
+        self.notes.setFixedHeight(130)
+        self.notes.setPlainText(self.update_info.body.strip() or tr("update.no_notes"))
+        self.notes.setVisible(False)
+        lay.addWidget(self.notes)
 
-        layout.addWidget(shield_frame)
+        self.btn_file = QPushButton(tr("update.btn_show_file"))
+        self.btn_file.setObjectName("link")
+        self.btn_file.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_file.clicked.connect(self._show_file)
+        lay.addWidget(self.btn_file, 0, Qt.AlignmentFlag.AlignLeft)
 
-        # 3. Список змін (Release Notes)
-        lbl_notes = QLabel("Список змін та покращень:")
-        lbl_notes.setStyleSheet("font-size: 13px; font-weight: bold; color: #94a3b8;")
-        layout.addWidget(lbl_notes)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addStretch()
+        self.btn_secondary = QPushButton()
+        self.btn_secondary.clicked.connect(self._on_secondary)
+        row.addWidget(self.btn_secondary)
+        self.btn_primary = QPushButton()
+        self.btn_primary.setObjectName("primary")
+        self.btn_primary.clicked.connect(self._on_primary)
+        row.addWidget(self.btn_primary)
+        lay.addLayout(row)
 
-        self.txt_notes = QTextEdit()
-        self.txt_notes.setReadOnly(True)
-        notes_text = self.update_info.body.strip() if self.update_info.body else "Покращення стабільності та виправлення помилок."
-        self.txt_notes.setText(notes_text)
-        layout.addWidget(self.txt_notes, 1)
+    # ── states ───────────────────────────────────────────────────────
+    def _set_state(self, state: str):
+        self._state = state
+        self.bar.setVisible(state in ("downloading", "installing", "restarting"))
+        self.btn_details.setVisible(state in ("prompt", "error"))
+        self.notes.setVisible(self.notes.isVisible() and state in ("prompt", "error"))
+        self.btn_file.setVisible(state == "error" and bool(self._downloaded_path))
+        self.lbl_error.setVisible(state == "error")
+        self.lbl_info.setVisible(state != "error")
+        self.btn_primary.setVisible(state in ("prompt", "error"))
+        self.btn_secondary.setVisible(state in ("prompt", "downloading", "error"))
+        self.btn_close.setVisible(state != "restarting")
+        self.adjustSize()
 
-        # 4. Прогрес-бар та статусний текст (приховані до старту завантаження)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setVisible(False)
-        layout.addWidget(self.progress_bar)
+    def _show_prompt(self):
+        self.lbl_title.setText(tr("update.title_available"))
+        self.lbl_sub.setText(tr("update.versions", current=__version__, new=self.update_info.version))
+        self.lbl_info.setText(tr("update.safe_note"))
+        self.btn_details.setText(tr("update.whats_new"))
+        self.btn_primary.setText(tr("update.btn_update"))
+        self.btn_secondary.setText(tr("update.btn_later"))
+        self._set_state("prompt")
 
-        self.lbl_status = QLabel("")
-        self.lbl_status.setStyleSheet("font-size: 12px; color: #94a3b8;")
-        self.lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_status.setVisible(False)
-        layout.addWidget(self.lbl_status)
+    def _show_downloading(self):
+        self.lbl_title.setText(tr("update.downloading"))
+        self.lbl_info.setText("")
+        self.btn_secondary.setText(tr("update.btn_cancel"))
+        self.bar.set_value(0.0)
+        self._set_state("downloading")
 
-        # 5. Кнопки управління
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
+    def _show_installing(self):
+        self.lbl_title.setText(tr("update.installing"))
+        self.lbl_info.setText(tr("update.verifying"))
+        self.bar.set_indeterminate(True)
+        self._set_state("installing")
 
-        self.btn_github = QPushButton("🌐 Сторінка релізу")
-        self.btn_github.setFixedHeight(36)
-        self.btn_github.setStyleSheet("""
-            QPushButton {
-                background-color: #1e293b;
-                color: #94a3b8;
-                border: 1px solid #334155;
-                border-radius: 6px;
-                padding: 6px 14px;
-                font-size: 12px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #334155;
-                color: #e2e8f0;
-            }
-        """)
-        self.btn_github.clicked.connect(self.open_github_release)
-        btn_layout.addWidget(self.btn_github)
+    def _show_error(self, message: str):
+        self.lbl_title.setText(tr("update.error_title"))
+        self.lbl_error.setText(message)
+        self.btn_primary.setText(tr("update.btn_retry"))
+        self.btn_secondary.setText(tr("update.btn_release_page"))
+        self.btn_details.setText(tr("update.whats_new"))
+        self._set_state("error")
 
-        btn_layout.addStretch()
+    # ── actions ──────────────────────────────────────────────────────
+    def _on_primary(self):
+        if self._state == "prompt" or self._state == "error":
+            self._start_download()
 
-        self.btn_cancel = QPushButton("Пізніше")
-        self.btn_cancel.setFixedHeight(36)
-        self.btn_cancel.setStyleSheet("""
-            QPushButton {
-                background-color: #1e293b;
-                color: #cbd5e1;
-                border: 1px solid #334155;
-                border-radius: 6px;
-                padding: 6px 14px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #334155;
-                color: white;
-            }
-        """)
-        self.btn_cancel.clicked.connect(self.close)
-        btn_layout.addWidget(self.btn_cancel)
+    def _on_secondary(self):
+        if self._state == "downloading":
+            self.downloader.cancel()
+            self._show_prompt()
+        elif self._state == "error":
+            self._open_release_page()
+        else:
+            self.reject()
 
-        self.btn_update = QPushButton("⚡ Оновити в 1 клік")
-        self.btn_update.setFixedHeight(36)
-        self.btn_update.setStyleSheet("""
-            QPushButton {
-                background-color: #0284c7;
-                color: white;
-                border: 1px solid #0ea5e9;
-                border-radius: 6px;
-                padding: 6px 18px;
-                font-size: 13px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0369a1;
-            }
-            QPushButton:disabled {
-                background-color: #334155;
-                color: #64748b;
-                border-color: #475569;
-            }
-        """)
-        self.btn_update.clicked.connect(self.start_update)
-        btn_layout.addWidget(self.btn_update)
+    def _close_requested(self):
+        if self._state == "downloading":
+            self.downloader.cancel()
+        self.reject()
 
-        layout.addLayout(btn_layout)
+    def _toggle_notes(self):
+        self.notes.setVisible(not self.notes.isVisible())
+        self.btn_details.setText(tr("update.hide_details") if self.notes.isVisible() else tr("update.whats_new"))
+        self.adjustSize()
 
-    def setup_signals(self):
-        self.downloader.progress.connect(self.on_download_progress)
-        self.downloader.finished.connect(self.on_download_finished)
-        self.downloader.error.connect(self.on_download_error)
+    def _open_release_page(self):
+        webbrowser.open(self.update_info.html_url or GITHUB_REPO_URL)
 
-    def open_github_release(self):
-        url = self.update_info.html_url or GITHUB_REPO_URL
-        webbrowser.open(url)
+    def _show_file(self):
+        if self._downloaded_path and os.path.exists(self._downloaded_path):
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(self._downloaded_path)])
 
-    def start_update(self):
-        if not self.update_info.download_url:
-            self.lbl_status.setText("⚠️ Посилання для прямого завантаження відсутнє. Відкриваємо GitHub...")
-            self.lbl_status.setStyleSheet("color: #f59e0b; font-size: 12px;")
-            self.lbl_status.setVisible(True)
-            self.open_github_release()
+    def _start_download(self):
+        info = self.update_info
+        if not info.download_url:
+            self._open_release_page()
+            self._show_error(tr("update.no_direct_link"))
             return
+        self._show_downloading()
+        self._started_at = time.monotonic()
+        self._last_sample = (self._started_at, 0)
+        self._speed = 0.0
+        self.downloader.download_async(info.download_url, info.asset_name, info.sha256)
 
-        self.btn_update.setEnabled(False)
-        self.btn_cancel.setEnabled(False)
-        self.btn_github.setEnabled(False)
-        self.progress_bar.setVisible(True)
-        self.lbl_status.setVisible(True)
-        self.lbl_status.setText("Запуск завантаження оновлення...")
-        self.lbl_status.setStyleSheet("color: #38bdf8; font-size: 12px;")
+    def _on_progress(self, downloaded: int, total: int, percent: float):
+        if self._state != "downloading":
+            return
+        now = time.monotonic()
+        t0, b0 = self._last_sample
+        if now - t0 >= 0.5:
+            inst = (downloaded - b0) / (now - t0)
+            self._speed = inst if self._speed == 0 else self._speed * 0.7 + inst * 0.3
+            self._last_sample = (now, downloaded)
 
-        self.downloader.download_async(
-            self.update_info.download_url,
-            self.update_info.asset_name
-        )
-
-    def on_download_progress(self, downloaded: int, total: int, percent: float):
-        self.progress_bar.setValue(int(percent))
-        dl_mb = downloaded / (1024 * 1024)
-        total_mb = total / (1024 * 1024) if total > 0 else 0
+        mb = 1024 * 1024
+        speed_txt = f"{self._speed / mb:.1f}"
         if total > 0:
-            self.lbl_status.setText(f"Завантаження: {dl_mb:.1f} МБ / {total_mb:.1f} МБ ({percent:.1f}%)")
+            self.bar.set_value(downloaded / total)
+            text = tr("update.progress", done=f"{downloaded / mb:.1f}", total=f"{total / mb:.1f}", speed=speed_txt)
+            if self._speed > 0:
+                text += "  ·  " + tr("update.eta", seconds=int((total - downloaded) / self._speed))
         else:
-            self.lbl_status.setText(f"Завантаження: {dl_mb:.1f} МБ...")
+            self.bar.set_indeterminate(True)
+            text = tr("update.progress_unknown", done=f"{downloaded / mb:.1f}", speed=speed_txt)
+        self.lbl_info.setText(text)
 
-    def on_download_finished(self, file_path: str):
-        self.progress_bar.setValue(100)
-        self.lbl_status.setText("✅ Завантаження завершено! Застосування оновлення...")
-        self.lbl_status.setStyleSheet("color: #22c55e; font-size: 12px; font-weight: bold;")
+    def _on_downloaded(self, path: str):
+        self._downloaded_path = path
+        self._busy = True
+        self._show_installing()
+        threading.Thread(target=self._install_worker, args=(path,), name="update-install", daemon=True).start()
 
-        # Запуск фонового скрипта оновлення Windows
-        success = UpdateInstaller.launch_windows_updater(file_path)
-        if success:
-            self.lbl_status.setText("🚀 Перезапуск програми...")
-            # Закриваємо поточний додаток для того, щоб скрипт замінив виконувані файли
-            QApplication.instance().quit()
-        else:
-            self.lbl_status.setText("❌ Помилка запуску оновлювача Windows.")
-            self.lbl_status.setStyleSheet("color: #ef4444; font-size: 12px;")
-            self.btn_cancel.setEnabled(True)
+    def _install_worker(self, path: str):
+        try:
+            new_exe = UpdateInstaller.apply_update(path)
+            self._install_done.emit(new_exe)
+        except UpdateError as exc:
+            self._install_failed.emit(str(exc))
+        except Exception as exc:  # unexpected: still surface it instead of hanging the dialog
+            log.exception("Update installation crashed")
+            self._install_failed.emit(str(exc))
 
-    def on_download_error(self, err_msg: str):
-        self.lbl_status.setText(f"❌ Помилка завантаження: {err_msg}")
-        self.lbl_status.setStyleSheet("color: #ef4444; font-size: 12px;")
-        self.btn_update.setEnabled(True)
-        self.btn_cancel.setEnabled(True)
-        self.btn_github.setEnabled(True)
+    def _on_installed(self, exe_path: str):
+        self.lbl_title.setText(tr("update.restarting"))
+        self.lbl_info.setText("")
+        self._set_state("restarting")
+        try:
+            UpdateInstaller.restart_application(exe_path)
+        except OSError as exc:
+            self._on_error(f"The update was installed but the app could not restart: {exc}")
+            return
+        app = QApplication.instance()
+        if app:
+            app.quit()
+        # Safety net: background threads must not keep the old process alive.
+        QTimer.singleShot(4000, lambda: os._exit(0))
+
+    def _on_error(self, message: str):
+        self._busy = False
+        self.bar.set_indeterminate(False)
+        self._show_error(message)
+
+    # ── frameless window dragging ────────────────────────────────────
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self._state != "restarting":
+            self._close_requested()
+            return
+        super().keyPressEvent(event)

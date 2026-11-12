@@ -1,18 +1,18 @@
 import re
-import uuid
 import time
-from dataclasses import dataclass, asdict
-from typing import Optional, Tuple, Dict, Any
+import uuid
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, Optional, Tuple
 
-# Регулярний вираз для пошуку координат SCUM у тексті
-# Приклад: {X=174468.797 Y=345933.000 Z=34103.105|P=342.318665 Y=117.616730 R=0.000000}
-# Або скорочений: {X=174468.797 Y=345933.000 Z=34103.105}
+# Regex for finding SCUM coordinates in text
+# Example: {X=174468.797 Y=345933.000 Z=34103.105|P=342.318665 Y=117.616730 R=0.000000}
+# Or short form: {X=174468.797 Y=345933.000 Z=34103.105}
 SCUM_COORD_REGEX = re.compile(
     r'\{X=(?P<x>[-0-9\.]+)\s+Y=(?P<y>[-0-9\.]+)\s+Z=(?P<z>[-0-9\.]+)(?:\|P=(?P<p>[-0-9\.]+)\s+Y=(?P<py>[-0-9\.]+)\s+R=(?P<r>[-0-9\.]+))?\}',
     re.IGNORECASE
 )
 
-# Константи світових меж SCUM (відповідно до математики scum-map.com)
+# SCUM world bounds (matching scum-map.com math)
 RL = 619200.0
 FL = 1524000.0
 YL = 619199.9375
@@ -22,13 +22,13 @@ NL = 320.0
 
 def convert_scum_to_norm(x: float, y: float) -> Tuple[float, float]:
     """
-    Конвертує ігрові координати SCUM (X, Y в см) у нормалізовані координати карти (0.0 .. 1.0).
-    (0.0, 0.0) — верхній лівий кут (Sector D4).
-    (1.0, 1.0) — нижній правий кут (Sector Z0).
+    Converts SCUM game coordinates (X, Y in cm) to normalized map coordinates (0.0 .. 1.0).
+    (0.0, 0.0) is the top-left corner (Sector D4).
+    (1.0, 1.0) is the bottom-right corner (Sector Z0).
     """
     norm_x = (RL - x) / FL
     norm_y = (YL - y) / AL
-    # Затискаємо в межі 0.0 .. 1.0 (якщо гравець раптом за межами мапи)
+    # Clamp to 0.0 .. 1.0 (in case the player is outside the map)
     norm_x = max(0.0, min(1.0, norm_x))
     norm_y = max(0.0, min(1.0, norm_y))
     return norm_x, norm_y
@@ -36,7 +36,7 @@ def convert_scum_to_norm(x: float, y: float) -> Tuple[float, float]:
 
 def convert_norm_to_scum(norm_x: float, norm_y: float) -> Tuple[float, float]:
     """
-    Зворотна конвертація з нормалізованих координат карти (0.0 .. 1.0) в ігрові координати SCUM.
+    Reverse conversion from normalized map coordinates (0.0 .. 1.0) to SCUM game coordinates.
     """
     x = RL - norm_x * FL
     y = YL - norm_y * AL
@@ -45,17 +45,17 @@ def convert_norm_to_scum(norm_x: float, norm_y: float) -> Tuple[float, float]:
 
 def get_sector_info(norm_x: float, norm_y: float) -> Tuple[str, str]:
     """
-    Визначає ігровий сектор (D0-D4, C0-C4, B0-B4, A0-A4, Z0-Z4)
-    та кейпад (k1..k9) за нормалізованими координатами карти (0.0..1.0).
-    Повертає: (sector, keypad), наприклад: ("D3", "k2")
+    Determines the game sector (D0-D4, C0-C4, B0-B4, A0-A4, Z0-Z4)
+    and keypad (k1..k9) from normalized map coordinates (0.0..1.0).
+    Returns: (sector, keypad), e.g. ("D3", "k2")
     """
-    # 1. Рядок: D, C, B, A, Z (вертикально з півночі на південь)
+    # 1. Row: D, C, B, A, Z (vertically, north to south)
     row_idx = int(norm_y * 5.0)
     row_idx = max(0, min(4, row_idx))
     rows = ["D", "C", "B", "A", "Z"]
     sector_letter = rows[row_idx]
 
-    # 2. Колонка: 4, 3, 2, 1, 0 (горизонтально з заходу на схід у системі координат SCUM)
+    # 2. Column: 4, 3, 2, 1, 0 (horizontally, west to east in SCUM coordinates)
     col_idx = int(norm_x * 5.0)
     col_idx = max(0, min(4, col_idx))
     cols = ["4", "3", "2", "1", "0"]
@@ -63,17 +63,17 @@ def get_sector_info(norm_x: float, norm_y: float) -> Tuple[str, str]:
 
     sector = f"{sector_letter}{sector_number}"
 
-    # 3. Кейпад (1..9 всередині кожного сектора 3х3)
+    # 3. Keypad (1..9 inside each 3x3 sector)
     # n_in_sec (0..2), m_in_sec (0..2)
     sub_col = int((norm_x * 15.0) % 3.0)
     sub_row = int((norm_y * 15.0) % 3.0)
     sub_col = max(0, min(2, sub_col))
     sub_row = max(0, min(2, sub_row))
 
-    # Стандартний нумпад SCUM:
-    # 7 8 9 (верхній ряд: sub_row=0)
-    # 4 5 6 (середній ряд: sub_row=1)
-    # 1 2 3 (нижній ряд: sub_row=2)
+    # Standard SCUM numpad:
+    # 7 8 9 (top row: sub_row=0)
+    # 4 5 6 (middle row: sub_row=1)
+    # 1 2 3 (bottom row: sub_row=2)
     keypad_matrix = [
         ["k7", "k8", "k9"],
         ["k4", "k5", "k6"],
@@ -85,7 +85,7 @@ def get_sector_info(norm_x: float, norm_y: float) -> Tuple[str, str]:
 
 
 # ─────────────────────────────────────────────────────────────
-# Категорії точок (тип мітки, емодзі, типовий колір та ключові слова)
+# Point categories (marker type, emoji, default color and keywords)
 # ─────────────────────────────────────────────────────────────
 POINT_CATEGORIES: Dict[str, Dict[str, Any]] = {
     "default": {
@@ -142,8 +142,8 @@ POINT_CATEGORIES: Dict[str, Dict[str, Any]] = {
 
 def detect_category_from_name(name: str) -> str:
     """
-    Автоматично визначає категорію точки за її назвою (з повідомлення чату або назви точки).
-    Якщо не знайдено відповідності — повертає 'default' (просто мітка).
+    Automatically detects the point category from its name (chat message or point name).
+    If nothing matches, returns 'default' (plain marker).
     """
     if not name or name.strip().lower() in ("none", ""):
         return "default"
@@ -158,7 +158,7 @@ def detect_category_from_name(name: str) -> str:
 
 
 def get_category_info(category_id: Optional[str]) -> Dict[str, Any]:
-    """Повертає метадані категорії (назва, емодзі, колір)."""
+    """Returns category metadata (name, emoji, color)."""
     if not category_id or category_id not in POINT_CATEGORIES:
         return POINT_CATEGORIES["default"]
     return POINT_CATEGORIES[category_id]
@@ -218,8 +218,8 @@ class MapPoint:
 
 def extract_point_name(text: str, coord_match: re.Match) -> str:
     """
-    Витягує назву точки з повідомлення.
-    Приклади:
+    Extracts the point name from a message.
+    Examples:
       'машина{X=...}' -> 'машина'
       '{X=...} машина' -> 'машина'
       '(машина{X=...})' -> 'машина'
@@ -227,15 +227,15 @@ def extract_point_name(text: str, coord_match: re.Match) -> str:
     """
     start, end = coord_match.span()
     label = text[:start] + " " + text[end:]
-    # Очищуємо від лапок, дужок, двокрапок та зайвих пробілів
+    # Strip quotes, brackets, colons and extra whitespace
     label = label.strip("()[]{} \t\r\n:;,-\"\'")
     return label if label else "None"
 
 
 def parse_chat_coordinate(text: str, time_str: Optional[str] = None) -> Optional[MapPoint]:
     """
-    Шукає координати SCUM у рядку повідомлення.
-    Якщо знайдено — створює та повертає об'єкт MapPoint.
+    Searches a message string for SCUM coordinates.
+    If found, creates and returns a MapPoint object.
     """
     match = SCUM_COORD_REGEX.search(text)
     if not match:
@@ -258,7 +258,7 @@ def parse_chat_coordinate(text: str, time_str: Optional[str] = None) -> Optional
     if not time_str:
         dt_str = datetime.now().strftime("%d.%m %H:%M:%S")
     else:
-        # Якщо time_str містить тільки час "12:30:45", додамо сьогоднішню дату
+        # If time_str contains only a time like "12:30:45", prepend today's date
         if len(time_str) <= 8 and ":" in time_str:
             dt_str = f"{datetime.now().strftime('%d.%m')} {time_str}"
         else:

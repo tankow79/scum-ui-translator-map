@@ -1,27 +1,30 @@
 from typing import Optional
-from PyQt6.QtWidgets import QColorDialog, QWidget, QDialog
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import QColorDialog, QDialog, QWidget
 
-# Глобальний стан, щоб таймер перевірки гри знав, що відкритий діалог і не ховав вікна
+from core.i18n import tr
+
+# Global state so the game-check timer knows a dialog is open and does not hide windows
 is_color_dialog_active: bool = False
 
 
 def open_safe_color_dialog(
     parent: Optional[QWidget],
     initial_hex: str = "#38bdf8",
-    title: str = "Оберіть колір шпильки"
+    title: Optional[str] = None
 ) -> Optional[str]:
     """
-    Безпечний вибір кольору без згортання повноекранної гри SCUM.
-    Використовує DontUseNativeDialog (блокує системний Win32 ChooseColor),
-    встановлює WindowStaysOnTopHint та темний стиль Midnight Cyan.
+    Safe color selection that does not minimize the fullscreen SCUM game.
+    Uses DontUseNativeDialog (avoids the system Win32 ChooseColor),
+    sets WindowStaysOnTopHint and a dark Midnight Cyan style.
     """
     global is_color_dialog_active
     is_color_dialog_active = True
     try:
         dlg = QColorDialog(QColor(initial_hex), parent)
-        dlg.setWindowTitle(title)
+        dlg.setWindowTitle(title or tr("colors.pick_pin_color"))
         dlg.setOption(QColorDialog.ColorDialogOption.DontUseNativeDialog, True)
         dlg.setOption(QColorDialog.ColorDialogOption.ShowAlphaChannel, False)
         dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)

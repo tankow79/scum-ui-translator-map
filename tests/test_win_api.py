@@ -1,15 +1,17 @@
-import pytest
-from PyQt6.QtWidgets import QWidget, QApplication
 import sys
+
+import pytest
+from PyQt6.QtWidgets import QApplication, QWidget
+
 from utils.win_api import (
-    set_click_through,
-    keep_on_top,
-    is_scum_running,
-    is_game_foreground,
     force_foreground_window,
+    get_last_game_hwnd,
+    is_game_foreground,
+    is_scum_running,
+    keep_on_top,
     restore_game_focus,
+    set_click_through,
     set_last_game_hwnd,
-    get_last_game_hwnd
 )
 
 
@@ -29,35 +31,35 @@ def test_win_api_window_manipulation(qapp):
     hwnd = int(w.winId())
     assert hwnd > 0
 
-    # Без помилок встановлюємо click-through
+    # Set click-through without errors
     set_click_through(hwnd, True)
     set_click_through(hwnd, False)
 
-    # Без помилок встановлюємо keep_on_top
+    # Set keep_on_top without errors
     keep_on_top(hwnd)
 
-    # Без помилок викликаємо force_foreground_window
+    # Call force_foreground_window without errors
     force_foreground_window(hwnd)
 
-    # Тест збереження та повернення дескриптора вікна
+    # Test storing and returning the window handle
     set_last_game_hwnd(hwnd)
     assert get_last_game_hwnd() == hwnd
 
-    # Без помилок викликаємо restore_game_focus
+    # Call restore_game_focus without errors
     restore_game_focus(hwnd)
 
     w.close()
 
 
 def test_win_api_scum_detection():
-    # Перевірка безпечного виклику детектора гри
+    # Check the game detector can be called safely
     running = is_scum_running("scum")
     assert isinstance(running, bool)
 
-    # Перевірка детектора активного вікна гри
+    # Check the active game window detector
     fg = is_game_foreground("scum", allow_own_process=True)
     assert isinstance(fg, bool)
 
-    # Перевірка з неіснуючим процесом
+    # Check with a non-existent process
     fg_fake = is_game_foreground("non_existent_game_xyz", allow_own_process=False)
     assert fg_fake is False

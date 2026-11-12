@@ -1,31 +1,39 @@
-import os
-from typing import Optional, Dict
+from typing import Dict
 
+from PyQt6.QtCore import QPoint, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QKeyEvent, QMouseEvent
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLineEdit, QScrollArea, QFrame, QSizeGrip, QApplication,
-    QMenu, QColorDialog
+    QApplication,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizeGrip,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QTimer
-from PyQt6.QtGui import QMouseEvent, QColor, QKeyEvent
 
 from core.config_manager import ConfigManager
-from core.coordinate_parser import (
-    MapPoint, POINT_CATEGORIES, get_category_info, detect_category_from_name
-)
+from core.coordinate_parser import POINT_CATEGORIES, MapPoint, get_category_info
+from core.i18n import tr
 from core.points_manager import PointsManager
 from ui.color_picker import open_safe_color_dialog
 
 
 class PointRowWidget(QFrame):
     """
-    Рядок окремої збереженої точки:
-    - Дата та час появи в чаті
-    - Сектор та кейпад (напр. D3 k2)
-    - Інлайн-поле редагування назви прямо в рядку з автозбереженням
-    - Кнопка "🗺 На карті" для миттєвого показу точки
-    - Кнопка "📋 Копіювати" для копіювання координат у буфер
-    - Кнопка "🗑" для видалення точки
+    Row for a single saved waypoint:
+    - Date and time it appeared in chat
+    - Sector and keypad (e.g. D3 k2)
+    - Inline name editor with autosave
+    - "On Map" button to show the point instantly
+    - "Copy" button to copy coordinates to the clipboard
+    - Delete button
     """
     open_on_map_requested = pyqtSignal(object)  # MapPoint
 
@@ -54,12 +62,12 @@ class PointRowWidget(QFrame):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
 
-        # 1. Дата та час
+        # 1. Date and time
         self.lbl_time = QLabel(f"🕒 {self.point.date_time}")
         self.lbl_time.setStyleSheet("color: #94a3b8; font-size: 11px; font-family: 'Consolas', monospace; min-width: 105px;")
         layout.addWidget(self.lbl_time)
 
-        # 2. Сектор та кейпад
+        # 2. Sector and keypad
         self.lbl_sector = QLabel(f"📍 {self.point.sector} ({self.point.keypad})")
         self.lbl_sector.setStyleSheet("""
             QLabel {
@@ -75,10 +83,10 @@ class PointRowWidget(QFrame):
         self.lbl_sector.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.lbl_sector)
 
-        # 3. Вибір типу / категорії мітки
+        # 3. Marker type / category picker
         self.btn_category = QPushButton()
         self.btn_category.setFixedHeight(26)
-        self.btn_category.setToolTip("Обрати тип мітки: Машина, База, Літак, Схрон тощо")
+        self.btn_category.setToolTip(tr("points.tip_category"))
         self.btn_category.setStyleSheet("""
             QPushButton {
                 background-color: #1e293b;
@@ -99,18 +107,18 @@ class PointRowWidget(QFrame):
         self.btn_category.clicked.connect(self._open_category_picker_menu)
         layout.addWidget(self.btn_category)
 
-        # 4. Вибір кольору шпильки на карті
+        # 4. Map pin color picker
         self.btn_color = QPushButton()
         self.btn_color.setFixedSize(22, 22)
-        self.btn_color.setToolTip("Змінити колір шпильки на карті")
+        self.btn_color.setToolTip(tr("points.tip_color"))
         self._update_color_button_style()
         self.btn_color.clicked.connect(self._open_color_picker_menu)
         layout.addWidget(self.btn_color)
 
-        # 5. Інлайн-редагування назви точки
+        # 5. Inline waypoint name editing
         self.txt_name = QLineEdit(self.point.name)
-        self.txt_name.setPlaceholderText("Назва точки...")
-        self.txt_name.setToolTip("Клікніть, щоб змінити назву точки (зберігається автоматично)")
+        self.txt_name.setPlaceholderText(tr("points.name_placeholder"))
+        self.txt_name.setToolTip(tr("points.tip_name"))
         self.txt_name.setStyleSheet("""
             QLineEdit {
                 background-color: #1e293b;
@@ -130,10 +138,10 @@ class PointRowWidget(QFrame):
         self.txt_name.editingFinished.connect(self._on_name_edited)
         layout.addWidget(self.txt_name, 2)
 
-        # 6. Інлайн-редагування нікнеймів гравців (тільки для бази)
+        # 6. Inline player nickname editing (base only)
         self.txt_players = QLineEdit(getattr(self.point, "players", ""))
-        self.txt_players.setPlaceholderText("👥 Гравці бази (через кому)...")
-        self.txt_players.setToolTip("Нікнейми гравців, які живуть на цій базі (відображаються при наведенні на карту)")
+        self.txt_players.setPlaceholderText(tr("points.players_placeholder"))
+        self.txt_players.setToolTip(tr("points.tip_players"))
         self.txt_players.setStyleSheet("""
             QLineEdit {
                 background-color: #1e293b;
@@ -154,14 +162,14 @@ class PointRowWidget(QFrame):
         self.txt_players.setVisible(is_base)
         layout.addWidget(self.txt_players, 2)
 
-        # 7. Координати (скорочений вигляд)
+        # 7. Coordinates (compact view)
         coord_preview = f"X={self.point.x:.0f} Y={self.point.y:.0f}"
         self.lbl_coords = QLabel(coord_preview)
         self.lbl_coords.setStyleSheet("color: #64748b; font-size: 11px; font-family: 'Consolas', monospace; min-width: 120px;")
         self.lbl_coords.setToolTip(self.point.raw_coord)
         layout.addWidget(self.lbl_coords)
 
-        # Спільний стиль кнопок дій
+        # Shared action button style
         btn_action_style = """
             QPushButton {
                 background-color: #1e293b;
@@ -179,21 +187,21 @@ class PointRowWidget(QFrame):
             }
         """
 
-        # 5. Кнопка "🗺 На карті"
-        self.btn_map = QPushButton("🗺 На карті")
+        # 5. "On Map" button
+        self.btn_map = QPushButton(tr("points.btn_on_map"))
         self.btn_map.setStyleSheet(btn_action_style)
-        self.btn_map.setToolTip("Відкрити та сфокусувати цю точку на карті")
+        self.btn_map.setToolTip(tr("points.tip_on_map"))
         self.btn_map.clicked.connect(lambda: self.open_on_map_requested.emit(self.point))
         layout.addWidget(self.btn_map)
 
-        # 6. Кнопка "📋 Копіювати"
-        self.btn_copy = QPushButton("📋 Копіювати")
+        # 6. "Copy" button
+        self.btn_copy = QPushButton(tr("points.btn_copy"))
         self.btn_copy.setStyleSheet(btn_action_style)
-        self.btn_copy.setToolTip("Скопіювати повні ігрові координати в буфер обміну")
+        self.btn_copy.setToolTip(tr("points.tip_copy"))
         self.btn_copy.clicked.connect(self._copy_coordinates)
         layout.addWidget(self.btn_copy)
 
-        # 7. Кнопка видалення "🗑"
+        # 7. Delete button
         self.btn_del = QPushButton("🗑")
         self.btn_del.setFixedSize(26, 26)
         self.btn_del.setStyleSheet("""
@@ -210,7 +218,7 @@ class PointRowWidget(QFrame):
                 color: white;
             }
         """)
-        self.btn_del.setToolTip("Видалити цю точку")
+        self.btn_del.setToolTip(tr("points.tip_delete"))
         self.btn_del.clicked.connect(lambda: self.mgr.delete_point(self.point.id))
         layout.addWidget(self.btn_del)
 
@@ -305,14 +313,14 @@ class PointRowWidget(QFrame):
         """)
 
         colors = [
-            ("🔴 Червона шпилька", "#ef4444"),
-            ("🔵 Блакитна шпилька", "#38bdf8"),
-            ("🟢 Смарагдова шпилька", "#10b981"),
-            ("🟡 Золота шпилька", "#f59e0b"),
-            ("🟣 Фіолетова шпилька", "#a855f7"),
-            ("🌸 Рожева шпилька", "#ec4899"),
-            ("🟠 Помаранчева шпилька", "#f97316"),
-            ("⚪ Світла шпилька", "#f8fafc"),
+            (tr("points.pin_red"), "#ef4444"),
+            (tr("points.pin_blue"), "#38bdf8"),
+            (tr("points.pin_green"), "#10b981"),
+            (tr("points.pin_gold"), "#f59e0b"),
+            (tr("points.pin_purple"), "#a855f7"),
+            (tr("points.pin_pink"), "#ec4899"),
+            (tr("points.pin_orange"), "#f97316"),
+            (tr("points.pin_light"), "#f8fafc"),
         ]
 
         for label, hex_code in colors:
@@ -320,7 +328,7 @@ class PointRowWidget(QFrame):
             action.triggered.connect(lambda checked=False, c=hex_code: self._set_color(c))
 
         menu.addSeparator()
-        action_custom = menu.addAction("🎨 Обрати власний колір...")
+        action_custom = menu.addAction(tr("points.pin_custom"))
         action_custom.triggered.connect(self._pick_custom_color)
 
         menu.exec(self.btn_color.mapToGlobal(QPoint(0, self.btn_color.height() + 2)))
@@ -332,7 +340,7 @@ class PointRowWidget(QFrame):
 
     def _pick_custom_color(self):
         initial = getattr(self.point, "color", None) or "#38bdf8"
-        col = open_safe_color_dialog(self, initial, "Оберіть колір шпильки для карти")
+        col = open_safe_color_dialog(self, initial, tr("points.pick_pin_color"))
         if col:
             self._set_color(col)
 
@@ -346,7 +354,7 @@ class PointRowWidget(QFrame):
 
     def _copy_coordinates(self):
         QApplication.clipboard().setText(self.point.raw_coord)
-        self.btn_copy.setText("✅ Скопійовано!")
+        self.btn_copy.setText(tr("points.copied"))
         self.btn_copy.setStyleSheet("""
             QPushButton {
                 background-color: #059669;
@@ -361,7 +369,7 @@ class PointRowWidget(QFrame):
         QTimer.singleShot(1500, self._restore_copy_button)
 
     def _restore_copy_button(self):
-        self.btn_copy.setText("📋 Копіювати")
+        self.btn_copy.setText(tr("points.btn_copy"))
         self.btn_copy.setStyleSheet("""
             QPushButton {
                 background-color: #1e293b;
@@ -382,11 +390,11 @@ class PointRowWidget(QFrame):
 
 class PointsWindow(QWidget):
     """
-    Нижнє вікно списку збережених координат із чату гри SCUM:
-    - Розташоване під картою
-    - Список від нових до старих
-    - Пошук / фільтрація точок
-    - Перетягування та зміна розмірів
+    Bottom window listing saved coordinates from the SCUM game chat:
+    - Placed below the map
+    - Newest to oldest
+    - Point search / filtering
+    - Draggable and resizable
     """
     closed = pyqtSignal()
     point_focus_requested = pyqtSignal(object)  # MapPoint
@@ -431,10 +439,10 @@ class PointsWindow(QWidget):
         c_layout.setContentsMargins(8, 8, 8, 8)
         c_layout.setSpacing(6)
 
-        # 1. Верхній бар
+        # 1. Top bar
         self._build_top_bar(c_layout)
 
-        # 2. Область прокрутки списку
+        # 2. Scrollable list area
         self.scroll_area = QScrollArea(self.container)
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
@@ -468,7 +476,7 @@ class PointsWindow(QWidget):
         self.scroll_area.setWidget(self.list_container)
         c_layout.addWidget(self.scroll_area, 1)
 
-        # 3. Нижній бар
+        # 3. Bottom bar
         self._build_bottom_bar(c_layout)
 
         self.main_layout.addWidget(self.container)
@@ -481,7 +489,7 @@ class PointsWindow(QWidget):
         h.setContentsMargins(4, 0, 4, 0)
         h.setSpacing(8)
 
-        self.lbl_title = QLabel("📌 <b>Точки чату SCUM</b>")
+        self.lbl_title = QLabel(tr("points.window_title_html"))
         self.lbl_title.setStyleSheet("color: #38bdf8; font-size: 13px;")
         h.addWidget(self.lbl_title)
 
@@ -491,9 +499,9 @@ class PointsWindow(QWidget):
 
         h.addStretch()
 
-        # Поле швидкого пошуку
+        # Quick search field
         self.txt_filter = QLineEdit()
-        self.txt_filter.setPlaceholderText("🔍 Пошук за назвою або сектором...")
+        self.txt_filter.setPlaceholderText(tr("points.search_placeholder"))
         self.txt_filter.setFixedWidth(240)
         self.txt_filter.setFixedHeight(26)
         self.txt_filter.setStyleSheet("""
@@ -512,10 +520,10 @@ class PointsWindow(QWidget):
         self.txt_filter.textChanged.connect(self._apply_filter)
         h.addWidget(self.txt_filter)
 
-        # Кнопка очищення
-        btn_clear = QPushButton("🧹 Очистити")
+        # Clear button
+        btn_clear = QPushButton(tr("points.btn_clear"))
         btn_clear.setFixedHeight(26)
-        btn_clear.setToolTip("Видалити всі збережені точки")
+        btn_clear.setToolTip(tr("points.tip_clear"))
         btn_clear.setStyleSheet("""
             QPushButton {
                 background-color: #1e293b;
@@ -531,10 +539,17 @@ class PointsWindow(QWidget):
                 border-color: #38bdf8;
             }
         """)
-        btn_clear.clicked.connect(self.points_mgr.clear_all)
+        btn_clear.clicked.connect(self._confirm_clear_all)
         h.addWidget(btn_clear)
 
-        # Закрити
+        btn_import = self._make_tool_button(tr("points.btn_import"), tr("points.tip_import"))
+        btn_import.clicked.connect(self._import_points)
+        h.addWidget(btn_import)
+        btn_export = self._make_tool_button(tr("points.btn_export"), tr("points.tip_export"))
+        btn_export.clicked.connect(self._export_points)
+        h.addWidget(btn_export)
+
+        # Close
         btn_close = QPushButton("✕")
         btn_close.setFixedSize(26, 26)
         btn_close.setStyleSheet("""
@@ -556,6 +571,73 @@ class PointsWindow(QWidget):
 
         layout.addWidget(top_bar)
 
+    @staticmethod
+    def _make_tool_button(text: str, tooltip: str) -> QPushButton:
+        btn = QPushButton(text)
+        btn.setFixedHeight(26)
+        btn.setToolTip(tooltip)
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1e293b; border: 1px solid #334155; border-radius: 4px;
+                color: #e2e8f0; font-size: 11px; font-weight: 600; padding: 2px 8px;
+            }
+            QPushButton:hover { background-color: #334155; border-color: #38bdf8; }
+        """)
+        return btn
+
+    def _confirm_clear_all(self):
+        count = len(self.points_mgr.get_points())
+        if count == 0:
+            return
+        answer = self._ask(tr("points.clear_confirm", count=count))
+        if answer == QMessageBox.StandardButton.Yes:
+            self.points_mgr.clear_all()
+
+    def _ask(self, text: str):
+        # The window may sit above the game: keep the dialog on top and do not steal focus rules.
+        box = QMessageBox(self)
+        box.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(tr("points.title"))
+        box.setText(text)
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        return box.exec()
+
+    def _notify(self, text: str, warning: bool = False):
+        box = QMessageBox(self)
+        box.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        box.setIcon(QMessageBox.Icon.Warning if warning else QMessageBox.Icon.Information)
+        box.setWindowTitle(tr("points.title"))
+        box.setText(text)
+        box.exec()
+
+    def _export_points(self):
+        points = self.points_mgr.get_points()
+        if not points:
+            self._notify(tr("points.export_empty"))
+            return
+        path, _ = QFileDialog.getSaveFileName(self, tr("points.btn_export"), "scum_waypoints.json", "JSON (*.json)")
+        if not path:
+            return
+        try:
+            count = self.points_mgr.export_to_file(path)
+            self._notify(tr("points.export_done", count=count, path=path))
+        except OSError as exc:
+            self._notify(tr("points.export_failed", error=str(exc)), warning=True)
+
+    def _import_points(self):
+        path, _ = QFileDialog.getOpenFileName(self, tr("points.btn_import"), "", "JSON (*.json);;All files (*)")
+        if not path:
+            return
+        replace = self._ask(tr("points.import_replace_prompt")) == QMessageBox.StandardButton.Yes
+        try:
+            result = self.points_mgr.import_from_file(path, replace=replace)
+        except (OSError, ValueError) as exc:
+            self._notify(tr("points.import_failed", error=str(exc)), warning=True)
+            return
+        self._notify(tr("points.import_done", added=result.added, duplicates=result.duplicates, invalid=result.invalid))
+
     def _build_bottom_bar(self, layout: QVBoxLayout):
         bottom_bar = QWidget()
         bottom_bar.setFixedHeight(20)
@@ -564,7 +646,7 @@ class PointsWindow(QWidget):
         h.setContentsMargins(4, 0, 0, 0)
         h.setSpacing(6)
 
-        lbl_hint = QLabel("💡 <i>Назву можна змінювати прямо в рядку. Координати зберігаються автоматично.</i>")
+        lbl_hint = QLabel(tr("points.hint_html"))
         lbl_hint.setStyleSheet("color: #64748b; font-size: 11px;")
         h.addWidget(lbl_hint)
 
@@ -582,9 +664,10 @@ class PointsWindow(QWidget):
         self.points_mgr.point_updated.connect(self._on_point_updated)
         self.points_mgr.point_deleted.connect(self._on_point_deleted)
         self.points_mgr.points_cleared.connect(self._on_points_cleared)
+        self.points_mgr.points_reloaded.connect(self.refresh_list)
 
     def refresh_list(self):
-        # Очищуємо існуючі віджети
+        # Clear existing widgets
         for row in self._row_widgets.values():
             row.deleteLater()
         self._row_widgets.clear()
@@ -603,7 +686,7 @@ class PointsWindow(QWidget):
         if prepend:
             self.list_layout.insertWidget(0, row)
         else:
-            # Перед stretch
+            # Before stretch
             self.list_layout.insertWidget(self.list_layout.count() - 1, row)
 
         self._check_row_visibility(row)
@@ -668,7 +751,7 @@ class PointsWindow(QWidget):
         )
         row.setVisible(visible)
 
-    # ──────────────────────── Переміщення вікна ────────────────────────
+    # ──────────────────────── Window dragging ────────────────────────
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton and event.pos().y() <= 40:
@@ -707,9 +790,9 @@ class PointsWindow(QWidget):
         h = max(160, min(h, sh - 40))
 
         if saved_x is None or saved_x < 0 or saved_y is None or saved_y < 0:
-            # Розташовуємо по центру знизу монітора
+            # Center at the bottom of the monitor
             x = sx + (sw - w) // 2
-            # Під картою
+            # Below the map
             map_y = self.cfg.get("map_y", -1)
             map_h = self.cfg.get("map_height", 660)
             if map_y is not None and map_y > 0:

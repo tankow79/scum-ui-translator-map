@@ -1,14 +1,13 @@
-import pytest
-from PyQt6.QtWidgets import QApplication
 import sys
 
+from PyQt6.QtWidgets import QApplication
+
 from core.config_manager import ConfigManager
-from core.translator import GoogleTranslatorEngine
 from core.points_manager import PointsManager
-from core.coordinate_parser import parse_chat_coordinate
+from core.translator import GoogleTranslatorEngine
+from main import AppController
 from ui.map_window import MapWindow
 from ui.points_window import PointsWindow
-from main import AppController
 
 app = QApplication.instance() or QApplication(sys.argv)
 

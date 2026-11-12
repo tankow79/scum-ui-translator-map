@@ -1,23 +1,22 @@
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QApplication, QComboBox
-)
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint
+from PyQt6.QtCore import QPoint, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from core.config_manager import ConfigManager
-from core.translator import GoogleTranslatorEngine
+from core.i18n import tr
 from core.languages import ALL_LANGUAGES
+from core.translator import GoogleTranslatorEngine
 from utils.win_api import force_foreground_window
+
 
 class QuickChatDialog(QWidget):
     """
-    Вікно швидкого введення та перекладу тексту для чату гри.
-    Підтримує:
-    - Перетягування мишкою у будь-яке зручне місце екрана із збереженням позиції.
-    - Два красиві спадні списки вибору мов (З якої мови ➔ На яку мову) та кнопку швидкої зміни місцями (⇄).
-    - Автоматичне копіювання перекладу в буфер при натисканні Enter.
-    - Надійне закриття по Escape.
+    Quick input and translation window for the game chat.
+    Supports:
+    - Dragging anywhere on screen, with the position saved.
+    - Two language dropdowns (source -> target) and a swap button (⇄).
+    - Copying the translation to the clipboard on Enter.
+    - Reliable closing with Escape.
     """
     message_translated = pyqtSignal(str, str)  # (original, translated)
 
@@ -124,11 +123,11 @@ class QuickChatDialog(QWidget):
         card_layout.setContentsMargins(12, 10, 12, 10)
         card_layout.setSpacing(8)
 
-        # 1. Верхня панель (Заголовок, вибір двох мов, кнопка swap, закрити)
+        # 1. Top bar (title, two language pickers, swap button, close)
         top_bar = QHBoxLayout()
         top_bar.setSpacing(6)
 
-        self.lbl_title = QLabel("💬 Переклад у чат")
+        self.lbl_title = QLabel(tr("quick_chat.title"))
         self.lbl_title.setStyleSheet("color: #00d2ff; font-weight: bold; font-size: 12px;")
         top_bar.addWidget(self.lbl_title)
 
@@ -142,7 +141,7 @@ class QuickChatDialog(QWidget):
 
         self.btn_swap = QPushButton("⇄")
         self.btn_swap.setFixedSize(26, 24)
-        self.btn_swap.setToolTip("Поміняти мови місцями")
+        self.btn_swap.setToolTip(tr("quick_chat.swap_tooltip"))
         self.btn_swap.setStyleSheet("""
             QPushButton {
                 background-color: #334155;
@@ -173,14 +172,14 @@ class QuickChatDialog(QWidget):
 
         card_layout.addLayout(top_bar)
 
-        # 2. Поле введення повідомлення
+        # 2. Message input field
         self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Введіть текст... (Enter для копіювання перекладу)")
+        self.input_field.setPlaceholderText(tr("quick_chat.input_placeholder"))
         self.input_field.textChanged.connect(self._on_text_changed)
         card_layout.addWidget(self.input_field)
 
-        # 3. Поле відображення результату перекладу
-        self.lbl_translation = QLabel("<i>Тут з'явиться переклад...</i>")
+        # 3. Translation result field
+        self.lbl_translation = QLabel(f"<i>{tr('quick_chat.placeholder_result')}</i>")
         self.lbl_translation.setStyleSheet("""
             background-color: rgba(0, 0, 0, 0.45);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -193,15 +192,15 @@ class QuickChatDialog(QWidget):
         self.lbl_translation.setWordWrap(True)
         card_layout.addWidget(self.lbl_translation)
 
-        # 4. Нижня панель дій та підказок
+        # 4. Bottom bar (actions and hints)
         bottom_bar = QHBoxLayout()
-        self.lbl_status = QLabel("💡 <b>Enter</b> — скопіювати | <b>Esc</b> — закрити | <i>Перетягуйте вікно мишкою</i>")
+        self.lbl_status = QLabel(tr("quick_chat.hint_html"))
         self.lbl_status.setStyleSheet("color: #8899aa; font-size: 10px;")
         bottom_bar.addWidget(self.lbl_status)
 
         bottom_bar.addStretch()
 
-        self.btn_copy = QPushButton("📋 Скопіювати (Enter)")
+        self.btn_copy = QPushButton(tr("quick_chat.copy_btn"))
         self.btn_copy.setStyleSheet("""
             QPushButton {
                 background-color: #16a34a;
@@ -262,8 +261,8 @@ class QuickChatDialog(QWidget):
         self.sync_combos_from_config()
         self.input_field.clear()
         self._current_translation = ""
-        self.lbl_translation.setText("<i>Тут з'явиться переклад...</i>")
-        self.lbl_status.setText("💡 <b>Enter</b> — скопіювати | <b>Esc</b> — закрити | <i>Перетягуйте вікно мишкою</i>")
+        self.lbl_translation.setText(f"<i>{tr('quick_chat.placeholder_result')}</i>")
+        self.lbl_status.setText(tr("quick_chat.hint_html"))
 
         saved_x = self.cfg.get("quick_chat_x", -1)
         saved_y = self.cfg.get("quick_chat_y", -1)
@@ -282,7 +281,7 @@ class QuickChatDialog(QWidget):
         self.raise_()
         self.activateWindow()
 
-        # Примусово передаємо фокус через Windows API
+        # Force focus via the Windows API
         hwnd = int(self.winId())
         force_foreground_window(hwnd)
 
@@ -291,9 +290,9 @@ class QuickChatDialog(QWidget):
     def _on_text_changed(self, text: str):
         if not text.strip():
             self._current_translation = ""
-            self.lbl_translation.setText("<i>Тут з'явиться переклад...</i>")
+            self.lbl_translation.setText(f"<i>{tr('quick_chat.placeholder_result')}</i>")
             return
-        self.lbl_translation.setText("<i>Перекладаємо...</i>")
+        self.lbl_translation.setText(f"<i>{tr('quick_chat.translating')}</i>")
         self._debounce_timer.start(250)
 
     def _do_live_translate(self):
@@ -314,7 +313,7 @@ class QuickChatDialog(QWidget):
             self.hide()
             return
 
-        if not self._current_translation or self.lbl_translation.text() == "<i>Перекладаємо...</i>":
+        if not self._current_translation or self.lbl_translation.text() == f"<i>{tr('quick_chat.translating')}</i>":
             my_lang = self.combo_src.currentData() or "uk"
             target_lang = self.combo_tgt.currentData() or "en"
             trans, _ = self.translator.translate_custom(orig_text, target=target_lang, source=my_lang)
@@ -323,7 +322,7 @@ class QuickChatDialog(QWidget):
         clipboard = QApplication.clipboard()
         clipboard.setText(self._current_translation)
 
-        self.lbl_status.setText("✅ <b>Скопійовано! Натисніть Ctrl+V у грі.</b>")
+        self.lbl_status.setText(tr("quick_chat.copied_html"))
         self.message_translated.emit(orig_text, self._current_translation)
 
         QTimer.singleShot(350, self.hide)

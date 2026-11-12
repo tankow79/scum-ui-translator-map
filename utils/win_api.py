@@ -1,7 +1,10 @@
 import ctypes
-from ctypes import wintypes
+import logging
 import os
 import sys
+from ctypes import wintypes
+
+log = logging.getLogger("scum.winapi")
 
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
@@ -21,7 +24,7 @@ SWP_SHOWWINDOW = 0x0040
 
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
-# Визначаємо типи для 64-бітних покажчиків
+# Define types for 64-bit pointers
 if sys.maxsize > 2**32:
     SetWindowLongPtr = user32.SetWindowLongPtrW
     SetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
@@ -34,40 +37,52 @@ else:
     SetWindowLongPtr = user32.SetWindowLongW
     GetWindowLongPtr = user32.GetWindowLongW
 
-# Збережений дескриптор вікна гри SCUM для миттєвого повернення фокусу
+# Saved SCUM game window handle for instant focus restore
 _last_game_hwnd: int = 0
 _app_mutex_handle = None
 
 
-def check_single_instance(mutex_name: str = "SCUM_Chat_Translator_Mutex_Unique") -> bool:
+def check_single_instance(mutex_name: str = "SCUM_Chat_Translator_Mutex_Unique",
+                          wait_seconds: float = 0.0) -> bool:
     """
-    Захист від випадкового повторного запуску програми.
-    Повертає True, якщо це єдиний екземпляр, або False, якщо програма вже працює.
+    Guard against running two copies of the app.
+    Returns True if this is the only instance, False if another one is already running.
+    ``wait_seconds`` lets a freshly updated process wait for its predecessor to exit.
     """
+    import time
+
     global _app_mutex_handle
     kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
     kernel32.CreateMutexW.restype = wintypes.HANDLE
-    _app_mutex_handle = kernel32.CreateMutexW(None, False, mutex_name)
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     ERROR_ALREADY_EXISTS = 183
-    if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
-        return False
-    return True
+    deadline = time.monotonic() + max(0.0, wait_seconds)
+    while True:
+        handle = kernel32.CreateMutexW(None, False, mutex_name)
+        if kernel32.GetLastError() != ERROR_ALREADY_EXISTS:
+            _app_mutex_handle = handle
+            return True
+        if handle:
+            kernel32.CloseHandle(handle)
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.25)
 
 
 def set_last_game_hwnd(hwnd: int):
-    """Зберегти дескриптор вікна гри SCUM."""
+    """Save the SCUM game window handle."""
     global _last_game_hwnd
     if hwnd and user32.IsWindow(hwnd):
         _last_game_hwnd = hwnd
 
 
 def get_last_game_hwnd() -> int:
-    """Отримати останній активний дескриптор вікна SCUM або знайти його."""
+    """Get the last active SCUM window handle or find it."""
     global _last_game_hwnd
     if _last_game_hwnd and user32.IsWindow(_last_game_hwnd):
         return _last_game_hwnd
 
-    # Спроба знайти вікно Unreal Engine / SCUM напряму
+    # Try to find the Unreal Engine / SCUM window directly
     h = user32.FindWindowW("UnrealWindow", None)
     if h and user32.IsWindow(h):
         _last_game_hwnd = h
@@ -88,8 +103,8 @@ def get_last_game_hwnd() -> int:
 
 def set_click_through(hwnd: int, enable: bool):
     """
-    Якщо enable=True: вікно стає прозорим для кліків мишкою (кліки летять безпосередньо в гру SCUM).
-    Якщо enable=False: вікно можна хапати мишкою, пересувати та змінювати розмір.
+    If enable=True: the window becomes click-through (clicks go straight to the SCUM game).
+    If enable=False: the window can be grabbed, moved and resized.
     """
     try:
         current_style = GetWindowLongPtr(hwnd, GWL_EXSTYLE)
@@ -99,12 +114,12 @@ def set_click_through(hwnd: int, enable: bool):
             new_style = (current_style & ~WS_EX_TRANSPARENT) | WS_EX_LAYERED
         SetWindowLongPtr(hwnd, GWL_EXSTYLE, new_style)
     except Exception as e:
-        print(f"[WinAPI] Помилка встановлення click-through: {e}")
+        log.error("Failed to set click-through: %s", e)
 
 
 def keep_on_top(hwnd: int):
     """
-    Забезпечує перебування вікна оверлея поверх гри (fullscreen borderless).
+    Keeps the overlay window above the game (fullscreen borderless).
     """
     try:
         user32.SetWindowPos(
@@ -114,14 +129,14 @@ def keep_on_top(hwnd: int):
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
         )
     except Exception as e:
-        print(f"[WinAPI] Помилка keep_on_top: {e}")
+        log.error("keep_on_top failed: %s", e)
 
 
 def force_foreground_window(hwnd: int):
     """
-    Надійно активує вікно та передає йому клавіатурний фокус введення,
-    навіть коли активна повноекранна гра SCUM.
-    Використовує try...finally для запобігання витоку потоків AttachThreadInput.
+    Reliably activates a window and gives it keyboard input focus,
+    even while the fullscreen SCUM game is active.
+    Uses try...finally to prevent AttachThreadInput thread leaks.
     """
     try:
         cur_thread = kernel32.GetCurrentThreadId()
@@ -138,13 +153,13 @@ def force_foreground_window(hwnd: int):
             user32.SetForegroundWindow(hwnd)
             user32.SetActiveWindow(hwnd)
     except Exception as e:
-        print(f"[WinAPI] Помилка force_foreground_window: {e}")
+        log.error("force_foreground_window failed: %s", e)
 
 
 def restore_game_focus(game_hwnd: int = 0):
     """
-    Миттєво повертає фокус та мишу назад у вікно гри SCUM (аналог поведінки NVIDIA / Steam overlay).
-    Гравець може одразу рухати мишкою та грати без додаткового кліку на екран гри.
+    Instantly returns focus and mouse to the SCUM game window (like NVIDIA / Steam overlay behavior).
+    The player can move the mouse and play right away without an extra click on the game.
     """
     if not game_hwnd or not user32.IsWindow(game_hwnd):
         game_hwnd = get_last_game_hwnd()
@@ -153,7 +168,7 @@ def restore_game_focus(game_hwnd: int = 0):
         return
 
     try:
-        # Знімаємо обмеження зміни фокусу Windows (імітація завершення системної комбінації)
+        # Lift Windows focus-change restrictions (simulates finishing a system key combo)
         user32.keybd_event(0x12, 0, 0x0002, 0)  # VK_MENU (Alt) up
 
         cur_thread = kernel32.GetCurrentThreadId()
@@ -172,12 +187,12 @@ def restore_game_focus(game_hwnd: int = 0):
             user32.SetActiveWindow(game_hwnd)
             user32.SetFocus(game_hwnd)
     except Exception as e:
-        print(f"[WinAPI] Помилка restore_game_focus: {e}")
+        log.error("restore_game_focus failed: %s", e)
 
 
 def is_scum_running(target_name: str = "scum") -> bool:
     """
-    Перевіряє, чи запущений процес гри SCUM (SCUM.exe / SCUM-Win64-Shipping.exe тощо).
+    Checks whether the SCUM game process is running (SCUM.exe / SCUM-Win64-Shipping.exe etc.).
     """
     try:
         target = target_name.lower()
@@ -202,15 +217,15 @@ def is_scum_running(target_name: str = "scum") -> bool:
                 kernel32.CloseHandle(h_proc)
         return False
     except Exception as e:
-        print(f"[WinAPI] Помилка is_scum_running: {e}")
+        log.error("is_scum_running failed: %s", e)
         return False
 
 
 def is_game_foreground(target_name: str = "scum", allow_own_process: bool = True) -> bool:
     """
-    Перевіряє, чи активне на передньому плані вікно гри SCUM (і не згорнуте в трей/панель),
-    або наше власне вікно вводу/налаштувань.
-    Зберігає актуальний дескриптор вікна SCUM для наступного повернення фокусу.
+    Checks whether the SCUM game window is in the foreground (and not minimized to tray/taskbar),
+    or our own input/settings window is.
+    Saves the current SCUM window handle for later focus restore.
     """
     try:
         hwnd = user32.GetForegroundWindow()
@@ -222,7 +237,7 @@ def is_game_foreground(target_name: str = "scum", allow_own_process: bool = True
         if not pid.value:
             return False
 
-        # Якщо активне наше власне вікно
+        # If our own window is active
         if allow_own_process and pid.value == os.getpid():
             return True
 
@@ -237,12 +252,12 @@ def is_game_foreground(target_name: str = "scum", allow_own_process: bool = True
                 if target_name.lower() in name:
                     if user32.IsIconic(hwnd):
                         return False
-                    # Зберігаємо актуальний дескриптор вікна гри SCUM
+                    # Save the current SCUM game window handle
                     set_last_game_hwnd(hwnd)
                     return True
             return False
         finally:
             kernel32.CloseHandle(h_proc)
     except Exception as e:
-        print(f"[WinAPI] Помилка is_game_foreground: {e}")
+        log.error("is_game_foreground failed: %s", e)
         return False

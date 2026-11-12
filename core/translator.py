@@ -1,12 +1,16 @@
-import requests
+import logging
 import re
 import threading
-from typing import Tuple, Dict, Optional, List
+from typing import Dict, Optional, Tuple
+
+import requests
+
+log = logging.getLogger("scum.translator")
 
 class GoogleTranslatorEngine:
     """
-    Надійний багатосерверний двигун перекладу через Google Translate API.
-    Автоматично ротує хости при затримках, кешує результати та захищений від таймаутів.
+    Reliable multi-host translation engine using the Google Translate API.
+    Automatically rotates hosts on delays, caches results and is protected against timeouts.
     """
     HOSTS = [
         "clients1.google.com",
@@ -36,43 +40,43 @@ class GoogleTranslatorEngine:
 
     def translate(self, text: str) -> Tuple[str, str]:
         """
-        Переклад вхідних повідомлень (за замовчуванням: source_lang -> target_lang).
+        Translates incoming messages (default: source_lang -> target_lang).
         """
         return self.translate_custom(text, self.target_lang, self.source_lang)
 
     def translate_custom(self, text: str, target: str, source: str = "auto") -> Tuple[str, str]:
         """
-        Універсальний переклад будь-якого тексту між будь-якими обраними мовами.
+        Universal translation of any text between any selected languages.
         """
         clean_text = text.strip()
         if not clean_text:
             return "", "unknown"
 
-        # Перевірка кешу
+        # Cache check
         cache_key = f"{source}->{target}:{clean_text}"
         with self._lock:
             if cache_key in self._cache:
                 return self._cache[cache_key]
 
-        # Не перекладати суто посилання, координати або цифри
+        # Do not translate pure links, coordinates or numbers
         if re.match(r"^https?://\S+$", clean_text) or clean_text.isdigit():
             return clean_text, "auto"
 
-        # Якщо є офіційний API ключ
+        # If an official API key is set
         if self.api_key:
             res = self._translate_with_api_key(clean_text, target, source)
             with self._lock:
                 self._cache[cache_key] = res
             return res
 
-        # Ротація та відмовостійкий переклад через сервери Google
+        # Rotation and fault-tolerant translation via Google servers
         res = self._translate_with_fallbacks(clean_text, target, source)
         with self._lock:
             self._cache[cache_key] = res
         return res
 
     def _translate_with_fallbacks(self, text: str, target: str, source: str) -> Tuple[str, str]:
-        # Спробуємо послідовно доступні хости Google
+        # Try the available Google hosts in order
         num_hosts = len(self.HOSTS)
         start_idx = self._host_index
 
@@ -86,11 +90,11 @@ class GoogleTranslatorEngine:
                 "q": text
             }
             try:
-                # Таймаут: 2.5с на з'єднання, 5с на читання
+                # Timeout: 2.5s to connect, 5s to read
                 r = self.session.get(url, params=params, timeout=(2.5, 5.0))
                 if r.status_code == 200:
                     data = r.json()
-                    # Запам'ятовуємо робочий хост
+                    # Remember the working host
                     self._host_index = (start_idx + attempt) % num_hosts
 
                     if isinstance(data, list) and len(data) > 0:
@@ -101,12 +105,12 @@ class GoogleTranslatorEngine:
                             return str(first[0]), source
                         elif isinstance(first, str):
                             return first, source
-            except Exception as e:
-                # Тихо переходимо до наступного сервера Google
+            except Exception:
+                # Silently move on to the next Google server
                 continue
 
-        # Якщо всі хости не відповіли, повертаємо оригінал без аварійного завершення
-        print(f"[Translator] Увага: Не вдалося отримати переклад для: '{text[:40]}...' (усі сервери зайняті)")
+        # If all hosts failed, return the original without crashing
+        log.warning("Could not get a translation for: '%s...' (all servers busy)", text[:40])
         return text, "unknown"
 
     def _translate_with_api_key(self, text: str, target: str, source: str) -> Tuple[str, str]:
@@ -128,5 +132,5 @@ class GoogleTranslatorEngine:
                 src = trans_obj.get("detectedSourceLanguage", source)
                 return translated, src
         except Exception as e:
-            print(f"[Translator API] Помилка: {e}")
+            log.error("Translation API error: %s", e)
         return text, "unknown"

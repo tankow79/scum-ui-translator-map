@@ -1,39 +1,54 @@
-"""
-Модуль перевірки, завантаження та автоматичного оновлення програми SCUM Chat Translator.
-Забезпечує:
-- Асинхронну перевірку нових версій через GitHub Releases API без зависання UI;
-- Відображення прогресу завантаження оновлення;
-- Гарантоване збереження всіх персональних налаштувань (config.json) та збережених точок (points.json);
-- Безшовне оновлення в 1 клік на Windows із перезапуском програми.
+"""Update checking, downloading and in-place installation.
+
+Flow
+----
+1. ``UpdateChecker`` asks the GitHub Releases API for the latest release and picks the best asset
+   (an ``.exe`` or a ``.zip`` containing one, matching the normal/portable variant of the running app).
+2. ``UpdateDownloader`` saves it to ``%LOCALAPPDATA%\\SCUM_Chat_Translator\\updates`` (``*.part`` while
+   in progress), verifying SHA-256 when GitHub provides a digest.
+3. ``UpdateInstaller.apply_update`` swaps the running executable in place:
+   running .exe -> ``.old`` (Windows allows renaming a loaded image), new .exe -> original path,
+   with automatic rollback on failure. No batch scripts, no waiting for the process to exit.
+4. ``UpdateInstaller.restart_application`` starts the new executable; the old process then quits.
+   ``cleanup_leftovers`` removes ``.old`` files on the next start.
+
+``config.json`` / ``points.json`` / ``profiles.json`` are never touched.
 """
 
-import os
-import sys
+import hashlib
 import json
-import time
+import logging
+import os
 import shutil
-import zipfile
-import tempfile
 import subprocess
+import sys
+import threading
+import time
+import urllib.error
 import urllib.request
+import zipfile
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
-from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from core.paths import get_updates_dir
 from core.version import (
-    __version__, __app_name__, GITHUB_RELEASES_API,
-    GITHUB_ALL_RELEASES_API, GITHUB_REPO_URL, is_version_newer
+    GITHUB_ALL_RELEASES_API,
+    GITHUB_RELEASES_API,
+    GITHUB_REPO_URL,
+    __version__,
+    is_version_newer,
 )
 
+log = logging.getLogger("scum.updater")
 
-@dataclass
-class ReleaseAsset:
-    name: str
-    download_url: str
-    size: int
-    content_type: str
+PROTECTED_USER_DATA_FILES = ["config.json", "points.json", "profiles.json"]
+MIN_EXE_SIZE = 1_000_000  # a real build is tens of MB; anything smaller is an error page / truncated file
+
+
+class UpdateError(Exception):
+    """Raised with a user-presentable message when an update cannot be completed."""
 
 
 @dataclass
@@ -48,33 +63,87 @@ class UpdateInfo:
     asset_size: int
     is_newer: bool
     is_zip: bool
+    sha256: Optional[str] = None
 
 
-PROTECTED_USER_DATA_FILES = ["config.json", "points.json"]
-
+# ───────────────────────── paths ─────────────────────────
 
 def get_application_root_dir() -> str:
-    """
-    Повертає робочу директорію програми (папку з .exe при frozen або корінь репозиторію).
-    """
+    """Folder containing the running .exe (frozen) or the repository root (source run)."""
     if getattr(sys, "frozen", False):
         return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def get_current_executable_path() -> str:
-    """
-    Повертає повний шлях до поточного виконуваного файлу чи точки входу.
-    """
     if getattr(sys, "frozen", False):
         return os.path.abspath(sys.executable)
     return os.path.abspath(os.path.join(get_application_root_dir(), "main.py"))
 
 
+def is_portable_build(exe_name: Optional[str] = None) -> bool:
+    name = (exe_name or os.path.basename(sys.executable)).lower()
+    return "portable" in name
+
+
+# ───────────────────────── release parsing ─────────────────────────
+
+def select_asset(assets: List[Dict[str, Any]], portable: bool = False) -> Optional[Dict[str, Any]]:
+    """Choose the release asset matching this build variant. Prefers .exe, then .zip; never source archives."""
+    candidates = []
+    for a in assets:
+        name = str(a.get("name", "")).lower()
+        if not a.get("browser_download_url"):
+            continue
+        if name.endswith(".exe"):
+            kind = 0
+        elif name.endswith(".zip"):
+            kind = 1
+        else:
+            continue
+        if "cert" in name or "source" in name:
+            continue
+        variant_match = (("portable" in name) == portable)
+        candidates.append((0 if variant_match else 1, kind, a))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: (c[0], c[1]))
+    return candidates[0][2]
+
+
+def _parse_digest(asset: Dict[str, Any]) -> Optional[str]:
+    digest = str(asset.get("digest") or "")
+    if digest.lower().startswith("sha256:"):
+        value = digest.split(":", 1)[1].strip().lower()
+        if len(value) == 64:
+            return value
+    return None
+
+
+def parse_release(data: Dict[str, Any], current_version: str = __version__,
+                  portable: Optional[bool] = None) -> UpdateInfo:
+    tag_name = str(data.get("tag_name", "")).strip()
+    version = tag_name.lstrip("vV")
+    portable = is_portable_build() if portable is None else portable
+    asset = select_asset(data.get("assets", []) or [], portable)
+
+    return UpdateInfo(
+        version=version,
+        name=data.get("name") or f"SCUM Translator {tag_name}",
+        body=data.get("body") or "",
+        published_at=str(data.get("published_at") or "")[:10],
+        html_url=data.get("html_url") or GITHUB_REPO_URL,
+        download_url=asset.get("browser_download_url") if asset else None,
+        asset_name=asset.get("name") if asset else None,
+        asset_size=int(asset.get("size", 0)) if asset else 0,
+        is_newer=is_version_newer(current_version, version),
+        is_zip=bool(asset and str(asset.get("name", "")).lower().endswith(".zip")),
+        sha256=_parse_digest(asset) if asset else None,
+    )
+
+
 class UpdateChecker(QObject):
-    """
-    Асинхронний перевіряльник наявності свіжих релізів на GitHub.
-    """
+    """Checks GitHub for a newer release on a background thread."""
     check_started = pyqtSignal()
     update_available = pyqtSignal(object)   # UpdateInfo
     no_update_found = pyqtSignal(str)       # current version
@@ -83,317 +152,287 @@ class UpdateChecker(QObject):
     def __init__(self, current_version: str = __version__):
         super().__init__()
         self.current_version = current_version
-        self._executor = ThreadPoolExecutor(max_workers=1)
 
     def check_for_updates_async(self):
-        """Запуск перевірки у фоновому потоці."""
         self.check_started.emit()
-        self._executor.submit(self._worker_check)
+        threading.Thread(target=self._worker_check, name="update-check", daemon=True).start()
 
     def _worker_check(self):
         try:
             info = self.fetch_latest_release_info()
-            if not info:
-                self.no_update_found.emit(self.current_version)
-            elif info.is_newer:
+            if info and info.is_newer:
                 self.update_available.emit(info)
             else:
                 self.no_update_found.emit(self.current_version)
-        except Exception as e:
-            self.check_error.emit(str(e))
+        except Exception as exc:
+            log.warning("Update check failed: %s", exc)
+            self.check_error.emit(self._friendly_error(exc))
 
-    def fetch_latest_release_info(self) -> Optional[UpdateInfo]:
-        """
-        Синхронний запит до GitHub API для отримання інформації про останній реліз.
-        """
+    @staticmethod
+    def _friendly_error(exc: Exception) -> str:
+        if isinstance(exc, urllib.error.HTTPError):
+            if exc.code == 403:
+                return "GitHub rate limit reached. Try again in a few minutes."
+            return f"GitHub responded with HTTP {exc.code}."
+        if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
+            return "No connection to GitHub. Check your internet connection."
+        return str(exc)
+
+    def _get_json(self, url: str) -> Any:
         headers = {
             "User-Agent": f"SCUM-Chat-Translator-Updater/{self.current_version}",
-            "Accept": "application/vnd.github.v3+json"
+            "Accept": "application/vnd.github+json",
         }
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
 
-        # 1. Спроба отримати latest release
-        req = urllib.request.Request(GITHUB_RELEASES_API, headers=headers)
+    def fetch_latest_release_info(self) -> Optional[UpdateInfo]:
         data = None
         try:
-            with urllib.request.urlopen(req, timeout=10) as response:
-                if response.status == 200:
-                    data = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                # Релізів немає або вони ще не опубліковані
-                data = None
-            else:
+            data = self._get_json(GITHUB_RELEASES_API)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
                 raise
-        except Exception:
-            raise
 
-        # 2. Якщо latest release повернув 404, перевіряємо список усіх релізів (включаючи пре-релізи)
-        if not data:
-            req_all = urllib.request.Request(GITHUB_ALL_RELEASES_API, headers=headers)
+        if not data:  # no "latest" release: fall back to the newest published one
             try:
-                with urllib.request.urlopen(req_all, timeout=10) as response:
-                    if response.status == 200:
-                        all_releases = json.loads(response.read().decode("utf-8"))
-                        if all_releases and isinstance(all_releases, list):
-                            data = all_releases[0]
+                releases = self._get_json(GITHUB_ALL_RELEASES_API)
+                data = next((r for r in releases if not r.get("draft")), None) if isinstance(releases, list) else None
             except Exception:
-                pass
+                data = None
 
         if not data:
             return None
+        return parse_release(data, self.current_version)
 
-        tag_name = data.get("tag_name", "").strip()
-        version = tag_name.lstrip("vV")
-        name = data.get("name", "") or f"SCUM Translator {tag_name}"
-        body = data.get("body", "") or "Опис оновлення відсутній."
-        published_at = data.get("published_at", "")[:10]
-        html_url = data.get("html_url", GITHUB_REPO_URL)
 
-        # Пошук найкращого ассету для завантаження:
-        # Пріоритет: .zip архів із готовим білдом, потім .exe
-        assets = data.get("assets", [])
-        best_url = None
-        best_name = None
-        best_size = 0
-        is_zip = False
-
-        for asset in assets:
-            a_name = asset.get("name", "")
-            a_url = asset.get("browser_download_url", "")
-            a_size = asset.get("size", 0)
-            if a_name.lower().endswith(".zip"):
-                best_url = a_url
-                best_name = a_name
-                best_size = a_size
-                is_zip = True
-                break
-            elif a_name.lower().endswith(".exe") and not best_url:
-                best_url = a_url
-                best_name = a_name
-                best_size = a_size
-                is_zip = False
-
-        # Fallback на zipball репозиторію, якщо окремих бінарників ще не прикріплено
-        if not best_url:
-            best_url = data.get("zipball_url")
-            best_name = f"{tag_name}.zip"
-            best_size = 0
-            is_zip = True
-
-        newer = is_version_newer(self.current_version, version)
-
-        return UpdateInfo(
-            version=version,
-            name=name,
-            body=body,
-            published_at=published_at,
-            html_url=html_url,
-            download_url=best_url,
-            asset_name=best_name,
-            asset_size=best_size,
-            is_newer=newer,
-            is_zip=is_zip
-        )
-
+# ───────────────────────── download ─────────────────────────
 
 class UpdateDownloader(QObject):
-    """
-    Завантажувач файлу оновлення з відстеженням прогресу в байтах та відсотках.
-    """
+    """Downloads the update with progress, integrity checking and cancel support."""
     progress = pyqtSignal(int, int, float)  # downloaded, total, percent (0-100)
-    finished = pyqtSignal(str)             # downloaded file path
-    error = pyqtSignal(str)                # error message
+    finished = pyqtSignal(str)              # final file path
+    error = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
-        self._executor = ThreadPoolExecutor(max_workers=1)
         self._cancel_requested = False
 
-    def download_async(self, url: str, filename: Optional[str] = None):
+    def download_async(self, url: str, filename: Optional[str] = None, expected_sha256: Optional[str] = None):
         self._cancel_requested = False
-        self._executor.submit(self._worker_download, url, filename)
+        threading.Thread(target=self._worker_download, args=(url, filename, expected_sha256),
+                         name="update-download", daemon=True).start()
 
     def cancel(self):
         self._cancel_requested = True
 
-    def _worker_download(self, url: str, filename: Optional[str] = None):
+    def _worker_download(self, url: str, filename: Optional[str], expected_sha256: Optional[str]):
+        part_path = ""
         try:
-            if not filename:
-                filename = url.split("/")[-1].split("?")[0] or "update.bin"
+            filename = os.path.basename(filename or url.split("?")[0]) or "update.bin"
+            dest_path = os.path.join(get_updates_dir(), filename)
+            part_path = dest_path + ".part"
 
-            temp_dir = tempfile.mkdtemp(prefix="scum_updater_")
-            dest_path = os.path.join(temp_dir, filename)
-
-            headers = {"User-Agent": f"SCUM-Chat-Translator-Updater/{__version__}"}
-            req = urllib.request.Request(url, headers=headers)
-
+            req = urllib.request.Request(url, headers={"User-Agent": f"SCUM-Chat-Translator-Updater/{__version__}"})
+            sha = hashlib.sha256()
             with urllib.request.urlopen(req, timeout=30) as response:
-                total_size = int(response.headers.get("Content-Length", 0))
+                total = int(response.headers.get("Content-Length", 0) or 0)
                 downloaded = 0
-                chunk_size = 64 * 1024  # 64 KB
-
-                with open(dest_path, "wb") as f:
+                with open(part_path, "wb") as f:
                     while True:
                         if self._cancel_requested:
-                            raise RuntimeError("Завантаження скасовано користувачем.")
-                        chunk = response.read(chunk_size)
+                            raise UpdateError("Download cancelled.")
+                        chunk = response.read(64 * 1024)
                         if not chunk:
                             break
                         f.write(chunk)
+                        sha.update(chunk)
                         downloaded += len(chunk)
-                        percent = (downloaded / total_size * 100.0) if total_size > 0 else 0.0
-                        self.progress.emit(downloaded, total_size, percent)
+                        self.progress.emit(downloaded, total, (downloaded / total * 100.0) if total > 0 else 0.0)
 
+            if total and downloaded != total:
+                raise UpdateError("Download was incomplete. Please try again.")
+            if expected_sha256 and sha.hexdigest().lower() != expected_sha256.lower():
+                raise UpdateError("Downloaded file failed the integrity check (SHA-256 mismatch).")
+
+            os.replace(part_path, dest_path)
+            log.info("Update downloaded to %s", dest_path)
             self.finished.emit(dest_path)
-        except Exception as e:
-            self.error.emit(str(e))
+        except Exception as exc:
+            log.warning("Update download failed: %s", exc)
+            if part_path and os.path.exists(part_path):
+                try:
+                    os.remove(part_path)
+                except OSError:
+                    pass
+            self.error.emit(str(exc) if isinstance(exc, UpdateError) else self._friendly(exc))
 
+    @staticmethod
+    def _friendly(exc: Exception) -> str:
+        if isinstance(exc, PermissionError):
+            return "Cannot write the update file (permission denied)."
+        if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
+            return "Download failed. Check your internet connection and try again."
+        return str(exc)
+
+
+# ───────────────────────── install ─────────────────────────
 
 class UpdateInstaller:
-    """
-    Менеджер встановлення оновлення з абсолютним захистом користувацьких даних.
-    """
+    """Installs a downloaded update by swapping the executable in place."""
 
     @staticmethod
     def backup_user_data(app_dir: str) -> Dict[str, str]:
-        """
-        Створює локальні копії .bak та архівний бекап у папці .update_backup/
-        для всіх критичних файлів користувача (config.json, points.json).
-        """
-        backups = {}
+        """Copy user data files into ``.update_backup/backup_<ts>/`` and next to the originals as ``.bak``."""
+        backups: Dict[str, str] = {}
         backup_dir = os.path.join(app_dir, ".update_backup", f"backup_{int(time.time())}")
-        os.makedirs(backup_dir, exist_ok=True)
-
         for filename in PROTECTED_USER_DATA_FILES:
-            src_path = os.path.join(app_dir, filename)
-            if os.path.exists(src_path):
-                # 1. Поруч у .bak
-                bak_path = os.path.join(app_dir, f"{filename}.bak")
-                shutil.copy2(src_path, bak_path)
-                # 2. В окрему папку бекапу
-                archive_path = os.path.join(backup_dir, filename)
-                shutil.copy2(src_path, archive_path)
-                backups[filename] = bak_path
-
+            src = os.path.join(app_dir, filename)
+            if not os.path.exists(src):
+                continue
+            os.makedirs(backup_dir, exist_ok=True)
+            bak = os.path.join(app_dir, f"{filename}.bak")
+            shutil.copy2(src, bak)
+            shutil.copy2(src, os.path.join(backup_dir, filename))
+            backups[filename] = bak
         return backups
 
     @staticmethod
     def safe_extract_zip(zip_path: str, target_dir: str):
-        """
-        Безпечно розпаковує архів, категорично ігноруючи файли користувача (config.json, points.json),
-        якщо вони вже існують у цільовій папці.
-        """
+        """Extract an archive without overwriting existing user data and without path traversal."""
+        target_root = os.path.realpath(target_dir)
         with zipfile.ZipFile(zip_path, "r") as z:
             for member in z.infolist():
-                # Нормалізація шляху для уникнення path traversal
-                filename = os.path.basename(member.filename)
-                if filename in PROTECTED_USER_DATA_FILES:
-                    dest = os.path.join(target_dir, filename)
-                    if os.path.exists(dest):
-                        # Пропускаємо, щоб зберегти налаштування користувача!
-                        continue
+                dest = os.path.realpath(os.path.join(target_dir, member.filename))
+                if dest != target_root and not dest.startswith(target_root + os.sep):
+                    raise UpdateError("Update archive contains an unsafe path.")
+                if os.path.basename(member.filename) in PROTECTED_USER_DATA_FILES and os.path.exists(dest):
+                    continue
                 z.extract(member, target_dir)
 
     @staticmethod
-    def launch_windows_updater(downloaded_file: str, current_pid: Optional[int] = None,
-                               app_dir: Optional[str] = None) -> bool:
+    def extract_executable(archive_path: str, portable: Optional[bool] = None) -> str:
+        """Pull the application .exe out of a release .zip. Returns the extracted path."""
+        portable = is_portable_build() if portable is None else portable
+        with zipfile.ZipFile(archive_path, "r") as z:
+            exes = [m for m in z.infolist() if m.filename.lower().endswith(".exe") and not m.is_dir()]
+            if not exes:
+                raise UpdateError("The update archive does not contain an application (.exe).")
+            exes.sort(key=lambda m: (("portable" in m.filename.lower()) != portable, -m.file_size))
+            member = exes[0]
+            out_dir = os.path.join(get_updates_dir(), "extracted")
+            shutil.rmtree(out_dir, ignore_errors=True)
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, os.path.basename(member.filename))
+            with z.open(member) as src, open(out_path, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+        return out_path
+
+    @staticmethod
+    def validate_executable(path: str):
+        if not os.path.isfile(path) or os.path.getsize(path) < MIN_EXE_SIZE:
+            raise UpdateError("The downloaded update is not a valid application file.")
+        with open(path, "rb") as f:
+            if f.read(2) != b"MZ":
+                raise UpdateError("The downloaded update is not a Windows executable.")
+
+    @staticmethod
+    def _assert_writable(directory: str):
+        probe = os.path.join(directory, f".write_test_{os.getpid()}")
+        try:
+            with open(probe, "w") as f:
+                f.write("ok")
+            os.remove(probe)
+        except OSError as exc:
+            raise UpdateError(
+                "The installation folder is not writable. Move the application to a normal folder "
+                "(for example Documents) or run it as administrator once."
+            ) from exc
+
+    @staticmethod
+    def apply_update(downloaded_file: str, target_exe: Optional[str] = None) -> str:
+        """Replace the running executable with the downloaded build. Returns the path of the new executable.
+
+        Raises ``UpdateError`` (with the original file restored) when anything goes wrong.
         """
-        Генерує та запускає автономний detached .bat скрипт, який:
-        1. Чекає завершення роботи поточного процесу програми;
-        2. Бекапить config.json та points.json;
-        3. Розпаковує/замінює оновлені файли;
-        4. Відновлює config.json та points.json у разі потреби;
-        5. Перезапускає оновлений додаток;
-        6. Видаляє себе.
-        """
-        if app_dir is None:
+        if target_exe is None:
+            if not getattr(sys, "frozen", False):
+                raise UpdateError(
+                    "Automatic installation works only in the packaged .exe. "
+                    f"The update was saved to:\n{downloaded_file}"
+                )
+            target_exe = sys.executable
+        target_exe = os.path.abspath(target_exe)
+        app_dir = os.path.dirname(target_exe)
+
+        new_exe = downloaded_file
+        if downloaded_file.lower().endswith(".zip"):
+            new_exe = UpdateInstaller.extract_executable(downloaded_file, is_portable_build(os.path.basename(target_exe)))
+        UpdateInstaller.validate_executable(new_exe)
+        UpdateInstaller._assert_writable(app_dir)
+
+        try:
+            UpdateInstaller.backup_user_data(app_dir)
+        except OSError as exc:
+            log.warning("User data backup failed: %s", exc)
+
+        staged = target_exe + ".new"
+        old = target_exe + ".old"
+        try:
+            shutil.copy2(new_exe, staged)
+            if os.path.exists(old):
+                try:
+                    os.remove(old)
+                except OSError:
+                    old = f"{target_exe}.{int(time.time())}.old"
+            os.replace(target_exe, old)            # a running image can be renamed, not overwritten
+            try:
+                os.replace(staged, target_exe)
+            except OSError:
+                os.replace(old, target_exe)         # rollback
+                raise
+        except OSError as exc:
+            if os.path.exists(staged):
+                try:
+                    os.remove(staged)
+                except OSError:
+                    pass
+            raise UpdateError(f"Could not install the update: {exc}") from exc
+
+        log.info("Update installed: %s (previous build kept as %s)", target_exe, old)
+        return target_exe
+
+    @staticmethod
+    def restart_application(exe_path: str):
+        """Launch the (new) executable detached. The caller must quit the current process afterwards."""
+        env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI") and k != "_MEIPASS2"}
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"  # makes a onefile child extract its own runtime
+        flags = 0x00000008 | 0x00000200 | 0x08000000  # DETACHED_PROCESS | NEW_PROCESS_GROUP | NO_WINDOW
+        subprocess.Popen([exe_path, "--post-update"], env=env, creationflags=flags,
+                         close_fds=True, cwd=os.path.dirname(exe_path))
+
+    @staticmethod
+    def cleanup_leftovers():
+        """Remove ``.old`` / ``.new`` files from a previous update and stale downloads."""
+        try:
             app_dir = get_application_root_dir()
-
-        if current_pid is None:
-            current_pid = os.getpid()
-
-        is_frozen = getattr(sys, "frozen", False)
-        exe_path = sys.executable if is_frozen else os.path.join(app_dir, "run.bat")
-        if not os.path.exists(exe_path) and not is_frozen:
-            exe_path = os.path.join(app_dir, "main.py")
-
-        is_zip = downloaded_file.lower().endswith(".zip")
-        script_path = os.path.join(app_dir, "_apply_update.bat")
-
-        # Формуємо надійний Windows CMD скрипт
-        bat_lines = [
-            "@echo off",
-            "chcp 65001 >nul",
-            "setlocal enabledelayedexpansion",
-            f"echo [SCUM Translator] Очікування завершення попереднього процесу (PID: {current_pid})...",
-            "",
-            ":wait_loop",
-            f'tasklist /FI "PID eq {current_pid}" 2>nul | findstr /I "{current_pid}" >nul',
-            "if not errorlevel 1 (",
-            "    timeout /t 1 /nobreak >nul",
-            "    goto wait_loop",
-            ")",
-            "timeout /t 1 /nobreak >nul",
-            "",
-            f'cd /d "{app_dir}"',
-            "echo [SCUM Translator] Створення безпечного бекапу налаштувань...",
-            'if exist "config.json" copy /y "config.json" "config.json.bak" >nul',
-            'if exist "points.json" copy /y "points.json" "points.json.bak" >nul',
-            "",
-        ]
-
-        if is_zip:
-            staging_dir = os.path.join(tempfile.gettempdir(), f"scum_staging_{int(time.time())}")
-            bat_lines.extend([
-                f'echo [SCUM Translator] Розпакування оновлення...',
-                f'if exist "{staging_dir}" rmdir /s /q "{staging_dir}"',
-                f'powershell -NoProfile -Command "Expand-Archive -Path \'{downloaded_file}\' -DestinationPath \'{staging_dir}\' -Force"',
-                "",
-                f'echo [SCUM Translator] Захист персональних даних гравця...',
-                f'if exist "{staging_dir}\\config.json" del /f /q "{staging_dir}\\config.json"',
-                f'if exist "{staging_dir}\\points.json" del /f /q "{staging_dir}\\points.json"',
-                "",
-                f'echo [SCUM Translator] Копіювання оновлених файлів програми...',
-                f'xcopy /e /y /q "{staging_dir}\\*" "{app_dir}\\" >nul',
-                f'rmdir /s /q "{staging_dir}" 2>nul',
-            ])
-        else:
-            # Пряма заміна одиночного exe-файлу
-            target_exe = os.path.basename(downloaded_file)
-            if is_frozen:
-                target_exe = os.path.basename(sys.executable)
-            bat_lines.extend([
-                f'echo [SCUM Translator] Заміна виконуваного файлу...',
-                f'copy /y "{downloaded_file}" "{os.path.join(app_dir, target_exe)}" >nul',
-            ])
-
-        bat_lines.extend([
-            "",
-            "echo [SCUM Translator] Фінальна перевірка збереження конфігурації...",
-            'if not exist "config.json" if exist "config.json.bak" copy /y "config.json.bak" "config.json" >nul',
-            'if not exist "points.json" if exist "points.json.bak" copy /y "points.json.bak" "points.json" >nul',
-            "",
-            "echo [SCUM Translator] Перезапуск оновленої програми...",
-            f'start "" "{exe_path}"',
-            "",
-            "timeout /t 1 /nobreak >nul",
-            f'del /f /q "{downloaded_file}" 2>nul',
-            '(goto) 2>nul & del "%~f0"',
-            "exit",
-        ])
-
-        with open(script_path, "w", encoding="utf-8") as f:
-            f.write("\r\n".join(bat_lines))
-
-        # Запуск bat скрипта у повністю відокремленому процесі без блокування
-        DETACHED_PROCESS = 0x00000008
-        CREATE_NEW_PROCESS_GROUP = 0x00000200
-        flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-
-        subprocess.Popen(
-            ["cmd.exe", "/c", script_path],
-            creationflags=flags,
-            close_fds=True,
-            shell=False
-        )
-        return True
+            exe_name = os.path.basename(sys.executable) if getattr(sys, "frozen", False) else None
+            if exe_name:
+                for fname in os.listdir(app_dir):
+                    if fname.startswith(exe_name) and fname.endswith((".old", ".new")):
+                        try:
+                            os.remove(os.path.join(app_dir, fname))
+                        except OSError:
+                            pass
+            updates = get_updates_dir()
+            for fname in os.listdir(updates):
+                path = os.path.join(updates, fname)
+                try:
+                    if os.path.isdir(path):
+                        shutil.rmtree(path, ignore_errors=True)
+                    elif time.time() - os.path.getmtime(path) > 24 * 3600:
+                        os.remove(path)
+                except OSError:
+                    pass
+        except OSError as exc:
+            log.debug("Cleanup skipped: %s", exc)

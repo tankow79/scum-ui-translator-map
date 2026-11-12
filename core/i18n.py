@@ -1,77 +1,98 @@
+"""User-interface localisation.
+
+Every ``assets/locales/<code>.json`` file is discovered automatically, so adding a language is just
+dropping a new file into that folder (copy ``en.json``, translate the values, keep the keys).
+Optional metadata inside a file::
+
+    "_meta": {"name": "Deutsch"}      # label shown in the Language tab (defaults to the code)
+
+Missing keys fall back to English.
+"""
+
 import json
+import logging
 import os
 import sys
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-DEFAULT_LOCALE = "uk"
+log = logging.getLogger("scum.i18n")
+
+DEFAULT_LOCALE = "en"
 FALLBACK_LOCALE = "en"
 
-class LocalizationManager:
-    """
-    Керує багатомовністю додатку (i18n).
-    Підтримує 'uk', 'en', 'ru' з авто-фолбеком на англійську та українську.
-    Підтримує динамічну зміну мови без перезапуску.
-    """
-    _instance: Optional['LocalizationManager'] = None
 
-    def __init__(self, current_locale: str = DEFAULT_LOCALE):
+class LocalizationManager:
+    _instance: Optional["LocalizationManager"] = None
+
+    def __init__(self, current_locale: str = DEFAULT_LOCALE, locales_dir: Optional[str] = None):
         self.current_locale = current_locale
+        self._locales_dir = locales_dir
         self.translations: Dict[str, Dict[str, Any]] = {}
         self._load_locales()
+        if self.current_locale not in self.translations:
+            self.current_locale = DEFAULT_LOCALE
 
     @classmethod
-    def get_instance(cls, current_locale: str = DEFAULT_LOCALE) -> 'LocalizationManager':
+    def get_instance(cls, current_locale: str = DEFAULT_LOCALE) -> "LocalizationManager":
         if cls._instance is None:
             cls._instance = LocalizationManager(current_locale)
         return cls._instance
 
     def _get_locales_dir(self) -> str:
+        if self._locales_dir:
+            return self._locales_dir
         base_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        locales_dir = os.path.join(base_dir, "assets", "locales")
-        return locales_dir
+        return os.path.join(base_dir, "assets", "locales")
 
     def _load_locales(self):
         locales_dir = self._get_locales_dir()
-        for lang in ("uk", "en", "ru"):
-            file_path = os.path.join(locales_dir, f"{lang}.json")
-            if os.path.exists(file_path):
-                try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        self.translations[lang] = json.load(f)
-                except Exception as e:
-                    print(f"[i18n] Помилка завантаження {file_path}: {e}")
-                    self.translations[lang] = {}
-            else:
-                self.translations[lang] = {}
+        self.translations = {}
+        if not os.path.isdir(locales_dir):
+            return
+        for fname in sorted(os.listdir(locales_dir)):
+            code, ext = os.path.splitext(fname)
+            if ext.lower() != ".json" or code.startswith("_"):
+                continue
+            try:
+                with open(os.path.join(locales_dir, fname), encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    self.translations[code] = data
+            except (OSError, ValueError) as exc:
+                log.warning("Could not load locale %s: %s", fname, exc)
 
-    def set_locale(self, locale: str):
-        if locale in ("uk", "en", "ru"):
+    def available_locales(self) -> List[Tuple[str, str]]:
+        """Return ``[(code, display_name)]`` for every installed language, English first."""
+        result = []
+        for code, data in self.translations.items():
+            meta = data.get("_meta", {}) if isinstance(data.get("_meta"), dict) else {}
+            result.append((code, str(meta.get("name") or code)))
+        result.sort(key=lambda item: (item[0] != DEFAULT_LOCALE, item[1].lower()))
+        return result
+
+    def set_locale(self, locale: str) -> bool:
+        if locale in self.translations:
             self.current_locale = locale
+            return True
+        return False
 
     def tr(self, key: str, default: Optional[str] = None, **kwargs) -> str:
-        """
-        Отримати переклад за ключем виду 'tray.open_map', 'settings.general.title'.
-        """
+        """Translate a dotted key such as ``tray.settings``; falls back to English, then to ``default``/key."""
         val = self._lookup(self.current_locale, key)
         if val is None and self.current_locale != FALLBACK_LOCALE:
             val = self._lookup(FALLBACK_LOCALE, key)
-        if val is None and self.current_locale != DEFAULT_LOCALE:
-            val = self._lookup(DEFAULT_LOCALE, key)
-
         if val is None:
             val = default if default is not None else key
-
         if kwargs:
             try:
                 return val.format(**kwargs)
-            except Exception:
+            except (KeyError, IndexError, ValueError):
                 return val
         return val
 
     def _lookup(self, lang: str, key_path: str) -> Optional[str]:
-        data = self.translations.get(lang, {})
-        parts = key_path.split(".")
-        for part in parts:
+        data: Any = self.translations.get(lang, {})
+        for part in key_path.split("."):
             if isinstance(data, dict) and part in data:
                 data = data[part]
             else:
@@ -80,5 +101,5 @@ class LocalizationManager:
 
 
 def tr(key: str, default: Optional[str] = None, **kwargs) -> str:
-    """Глобальна функція-скорочення для перекладу."""
+    """Shortcut for :meth:`LocalizationManager.tr` on the global instance."""
     return LocalizationManager.get_instance().tr(key, default=default, **kwargs)

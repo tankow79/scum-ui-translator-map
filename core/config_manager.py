@@ -1,7 +1,10 @@
 import json
+import logging
 import os
 import sys
 from typing import Any, Dict, Optional
+
+log = logging.getLogger("scum.config")
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "log_file_path": r"%LOCALAPPDATA%\SCUM\Saved\Logs\SCUM.log",
@@ -10,7 +13,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "outgoing_my_lang": "uk",
     "outgoing_target_lang": "en",
     "ui_display_mode": "both",  # "none", "border_only", "scrollbar_only", "both"
-    "overlay_x": -1,            # -1: автоматичне адаптивне позиціонування під екран гравця
+    "overlay_x": -1,            # -1: automatic adaptive positioning for the player's screen
     "overlay_y": -1,
     "overlay_width": 640,
     "overlay_height": 340,
@@ -18,16 +21,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "quick_chat_y": -1,
     "font_size": 13,
     "font_bold": False,
-    "text_outline": True,       # Чорна обводка тексту для максимальної читабельності на будь-якому фоні
-    "message_fade_timeout": 10,  # Секунди життя повідомлення в грі (0 - ніколи не зникати)
-    "game_chat_key": "T",        # Клавіша відкриття чату в SCUM
+    "text_outline": True,       # Black text outline for maximum readability on any background
+    "message_fade_timeout": 10,  # Seconds a message stays on screen (0 = never fade)
+    "game_chat_key": "T",        # Key that opens the chat in SCUM
     "bg_opacity": 0.5,
     "max_messages": 20,
     "show_original": True,
     "show_timestamp": True,
     "ignore_own_messages": False,
     "own_nickname": "",
-    "blacklist_nicknames": [],  # Список гравців, повідомлення яких не перекладаються (мовою оригіналу)
+    "blacklist_nicknames": [],  # Players whose messages are not translated (kept in the original language)
     "hotkey_toggle_lock": "F9",
     "hotkey_toggle_visibility": "F8",
     "hotkey_quick_chat": "T",
@@ -51,22 +54,39 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "points_width": 960,
     "points_height": 240,
     "auto_check_updates": True,
-    "enable_chat_translator": True,   # Можливість повністю вимкнути чат і лог-парсер (режим "Тільки Карта")
-    "ui_language": "uk",              # Мова інтерфейсу: "uk", "en", "ru"
-    "auto_start": True                # Автозапуск разом із Windows
+    "enable_chat_translator": True,   # Allows fully disabling chat and log parser ("Map only" mode)
+    "ui_language": "en",              # UI language code; any assets/locales/<code>.json file
+    "auto_start": True,               # Launch with Windows
+    # Updates
+    "update_check_interval_hours": 6, # Background re-check interval (0 = only at startup)
+    # Word blacklist
+    "blacklist_words_enabled": False,
+    "blacklist_words": [],
+    "blacklist_words_action": "mask",  # "mask" | "hide" | "no_translate"
+    "blacklist_words_whole_word": True,
+    "blacklist_words_case_sensitive": False,
+    # Language auto-detection
+    "autodetect_enabled": True,
+    "autodetect_skip_target_language": True,
+    "autodetect_skip_languages": [],
+    "autodetect_min_length": 3,
+    # Chat history
+    "history_enabled": True,
+    "history_save_to_disk": True,
+    "history_max_entries": 5000
 }
 
 
 def get_portable_config_path(filename: str = "config.json") -> str:
     """
-    Повертає абсолютний шлях до config.json поруч із виконуваним файлом (.exe)
-    або поруч із коренем проєкту при запуску з Python.
-    Це гарантує 100% портативність при перенесенні на інший комп'ютер.
+    Returns the absolute path to config.json next to the executable (.exe)
+    or next to the project root when running from Python.
+    This keeps the app fully portable across computers.
     """
     if getattr(sys, "frozen", False):
         base_dir = os.path.dirname(sys.executable)
     else:
-        # Папка проєкту (на рівень вище core/)
+        # Project folder (one level above core/)
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_dir, filename)
 
@@ -82,11 +102,11 @@ class ConfigManager:
     def load(self) -> Dict[str, Any]:
         if os.path.exists(self.config_path):
             try:
-                with open(self.config_path, "r", encoding="utf-8") as f:
+                with open(self.config_path, encoding="utf-8") as f:
                     data = json.load(f)
                     self.config = {**DEFAULT_CONFIG, **data}
             except Exception as e:
-                print(f"[Config] Помилка завантаження {self.config_path}: {e}, використовуються стандартні налаштування.")
+                log.warning("Failed to load %s: %s; using default settings.", self.config_path, e)
                 self.config = DEFAULT_CONFIG.copy()
         else:
             self.config = DEFAULT_CONFIG.copy()
@@ -95,14 +115,14 @@ class ConfigManager:
 
     def save(self):
         try:
-            # Створюємо директорію, якщо вона ще не існує
+            # Create the directory if it does not exist yet
             parent_dir = os.path.dirname(self.config_path)
             if parent_dir and not os.path.exists(parent_dir):
                 os.makedirs(parent_dir, exist_ok=True)
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"[Config] Помилка збереження config.json: {e}")
+            log.error("Failed to save config.json: %s", e)
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.config.get(key, default)

@@ -1,17 +1,17 @@
 import os
 import re
-import time
 import threading
+import time
 from typing import Callable, Optional
-from datetime import datetime
+
 
 class ScumLogParser:
     """
-    Моніторить SCUM.log у реальному часі та парсить повідомлення чату.
+    Monitors SCUM.log in real time and parses chat messages.
     """
     def __init__(self, log_path: str, on_message: Callable[[str, str, str, str], None]):
         """
-        :param log_path: Повний шлях до SCUM.log
+        :param log_path: Full path to SCUM.log
         :param on_message: Callback(timestamp_str, sender, message, msg_type)
         """
         self.log_path = log_path
@@ -19,13 +19,13 @@ class ScumLogParser:
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
-        # Регулярні вирази для повідомлень чату SCUM
-        # 1. Звичайні повідомлення від гравців
+        # Regexes for SCUM chat messages
+        # 1. Regular player messages
         self._pattern_player = re.compile(
             r'\[(?P<time>\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}):\d+\]\[\s*\d+\]LogSCUM:\s*Message:\s*(?P<sender>[^:]+):\s*(?P<msg>.*)',
             re.DOTALL
         )
-        # 2. Серверні повідомлення (MOTD, Welcome, Оголошення, Статистика)
+        # 2. Server messages (MOTD, Welcome, announcements, statistics)
         self._pattern_server = re.compile(
             r'\[(?P<time>\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}):\d+\]\[\s*\d+\]LogSCUM:\s*Sender player state null for message\s*(?P<sender>[^:]+):\s*(?P<msg>.*)',
             re.DOTALL
@@ -59,7 +59,6 @@ class ScumLogParser:
 
     def _tail_loop(self):
         file = None
-        last_inode = None
 
         while self._running:
             try:
@@ -69,21 +68,21 @@ class ScumLogParser:
 
                 if file is None:
                     try:
-                        file = open(self.log_path, "r", encoding="utf-8", errors="ignore")
-                        # На старті завантажуємо останні ~4 КБ, щоб одразу показати останні повідомлення чату
+                        file = open(self.log_path, encoding="utf-8", errors="ignore")
+                        # On start, load the last ~4 KB to immediately show recent chat messages
                         file.seek(0, os.SEEK_END)
                         end_pos = file.tell()
                         start_pos = max(0, end_pos - 8192)
                         file.seek(start_pos, os.SEEK_SET)
                         if start_pos > 0:
-                            file.readline()  # пропускаємо можливий обрізок рядка
-                    except Exception as e:
+                            file.readline()  # skip a possibly truncated line
+                    except Exception:
                         time.sleep(1.0)
                         continue
 
                 line = file.readline()
                 if not line:
-                    # Перевіряємо, чи файл не зменшився (перезапуск гри/ротація логу)
+                    # Check whether the file shrank (game restart / log rotation)
                     try:
                         cur_size = os.path.getsize(self.log_path)
                         if cur_size < file.tell():
@@ -97,7 +96,7 @@ class ScumLogParser:
 
                 self._process_line(line.strip())
 
-            except Exception as e:
+            except Exception:
                 time.sleep(0.5)
 
         if file:
@@ -121,13 +120,13 @@ class ScumLogParser:
             sender = m.group("sender").strip()
             msg = m.group("msg").strip()
 
-            # Очищуємо лапки, якщо є ("текст" -> текст)
+            # Strip quotes if present ("text" -> text)
             if msg.startswith('"') and msg.endswith('"') and len(msg) >= 2:
                 msg = msg[1:-1].strip()
 
-            # Визначення повідомлення загону / скваду (Squad chat)
-            # В SCUM логах чат скваду маркується префіксами/тегами у відправнику або повідомленні:
-            # Наприклад: "Message: (Squad) Nickname: hello", "(Team) Nick", "Nickname (Squad): hello", "[Squad] msg"
+            # Detect squad / team chat
+            # In SCUM logs squad chat is marked by prefixes/tags in the sender or message:
+            # e.g. "Message: (Squad) Nickname: hello", "(Team) Nick", "Nickname (Squad): hello", "[Squad] msg"
             lower_sender = sender.lower()
             lower_msg = msg.lower()
             squad_tags = (

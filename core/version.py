@@ -1,10 +1,10 @@
 """
-Модуль інформації про версію та конфігурацію репозиторію SCUM Chat Translator.
+Version and repository configuration info for SCUM Chat Translator.
 """
 
 from typing import Tuple
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __app_name__ = "SCUM Tactical Map & Real-Time Chat Translator"
 GITHUB_OWNER = "tankow79"
 GITHUB_REPO = "scum-ui-translator-map"
@@ -15,10 +15,10 @@ GITHUB_ALL_RELEASES_API = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_
 
 def parse_version(ver_str: str) -> Tuple[int, ...]:
     """
-    Парсить рядок версії (наприклад 'v1.2.3', '1.0.0', 'v2.1') у кортеж цілих чисел для порівняння.
+    Parses a version string (e.g. 'v1.2.3', '1.0.0', 'v2.1') into a tuple of ints for comparison.
     """
     cleaned = ver_str.strip().lstrip("vV")
-    # Відкидаємо можливі суфікси на кшталт -beta, -rc1
+    # Drop possible suffixes like -beta, -rc1
     main_part = cleaned.split("-")[0].split("+")[0]
     parts = []
     for part in main_part.split("."):
@@ -26,7 +26,7 @@ def parse_version(ver_str: str) -> Tuple[int, ...]:
             parts.append(int(part))
         except ValueError:
             parts.append(0)
-    # Гарантуємо мінімум 3 частини (major, minor, patch)
+    # Ensure at least 3 parts (major, minor, patch)
     while len(parts) < 3:
         parts.append(0)
     return tuple(parts)
@@ -34,7 +34,7 @@ def parse_version(ver_str: str) -> Tuple[int, ...]:
 
 def is_version_newer(current_ver: str, remote_ver: str) -> bool:
     """
-    Повертає True, якщо remote_ver строго новіша за current_ver.
+    Returns True if remote_ver is strictly newer than current_ver.
     """
     try:
         return parse_version(remote_ver) > parse_version(current_ver)
