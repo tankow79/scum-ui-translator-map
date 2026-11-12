@@ -43,7 +43,8 @@ def test_win_api_window_manipulation(qapp):
 
     # Test storing and returning the window handle
     set_last_game_hwnd(hwnd)
-    assert get_last_game_hwnd() == hwnd
+    if qapp.platformName() != "offscreen":  # the offscreen platform hands out fake handles
+        assert get_last_game_hwnd() == hwnd
 
     # Call restore_game_focus without errors
     restore_game_focus(hwnd)
