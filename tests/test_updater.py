@@ -208,7 +208,7 @@ def test_apply_update_extracts_exe_from_zip(tmp_path, updates_dir):
     archive = tmp_path / "release.zip"
     with zipfile.ZipFile(archive, "w") as z:
         z.writestr("SCUM_Chat_Translator/SCUM_Chat_Translator.exe", fake_exe(b"ZIPPED"))
-        z.writestr("SCUM_Chat_Translator/install_cert.bat", "echo")
+        z.writestr("SCUM_Chat_Translator/INSTRUCTION_EN.txt", "echo")
     UpdateInstaller.apply_update(str(archive), target_exe=str(target))
     assert target.read_bytes().startswith(b"MZZIPPED")
 
