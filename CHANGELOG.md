@@ -3,6 +3,22 @@
 All notable changes to this project are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [2.2.0]
+
+### Added
+- **Ukrainian interface** (`uk.json`) next to English; switch it in Settings -> General -> Language. Ukrainian README at `docs/readme/README.uk.md`.
+- Update backups are verified byte-for-byte; a failed backup cancels the update. Damaged or missing `config.json` / `points.json` / `profiles.json` are restored at startup, and backups are deleted automatically after a healthy start.
+
+### Changed
+- **Settings redesigned:** a sidebar with 5 sections (General, Chat, Appearance, Hotkeys, Profiles) replaces 8 crowded tabs; labels and checkboxes wrap, button rows flow onto new lines.
+- Layouts of the waypoints, map, quick chat, overlay, history, tray menu and stock dialogs rebuilt so long translations never overflow; shared dark theme.
+- Language list shows "English name - native name" without flag emoji; waypoint category names are translatable.
+- Update check interval applies immediately; "Map & Waypoints" no longer loses its `&` in menus.
+
+### Fixed
+- Leftover `.update_backup` folder and `*.bak` files after updating.
+- Cut-off buttons and labels in the waypoints window and settings.
+
 ## [2.1.1]
 
 ### Added
