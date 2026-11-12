@@ -3,6 +3,13 @@
 All notable changes to this project are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [2.1.1]
+
+### Added
+- Releases now include a full `.zip` package (exe + certificate installer + instructions) next to the standalone `.exe` files.
+
+All 2.1.0 changes below ship in this release.
+
 ## [2.1.0]
 
 ### Fixed
