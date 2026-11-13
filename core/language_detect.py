@@ -8,7 +8,7 @@ import re
 from typing import Iterable, Optional
 
 _URL_RE = re.compile(r"https?://\S+")
-_COORD_RE = re.compile(r"\{X=.*?\}", re.DOTALL)
+_COORD_RE = re.compile(r"\{X=[^{}]*\}")
 _UK_ONLY = set("іїєґІЇЄҐ")
 _RU_ONLY = set("ыэъёЫЭЪЁ")
 

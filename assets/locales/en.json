@@ -2,16 +2,13 @@
   "_meta": {
     "name": "English"
   },
-  "app_name": "SCUM Tactical Map & Chat Translator",
   "tray": {
-    "open_chat": "💬 Open Translator (T)",
+    "open_chat": "💬 Open Translator ({hotkey})",
     "mode_map_only": "🗺 Mode: Map Only (no chat)",
     "mode_full": "💬 Mode: Chat & Map",
-    "open_map": "🗺 Open Tactical Map ({hotkey})",
-    "close_map": "❌ Close Tactical Map ({hotkey})",
     "map_and_points": "🗺 Map & Waypoints ({hotkey})",
-    "toggle_lock": "🔒/🔓 Position Setting Mode (F9)",
-    "toggle_vis": "👁 Show/Hide Overlay (F8)",
+    "toggle_lock": "🔒/🔓 Position Setting Mode ({hotkey})",
+    "toggle_vis": "👁 Show/Hide Overlay ({hotkey})",
     "test_msg": "🧪 Send Test Message",
     "update_btn": "⚡ Update Program (1-click)",
     "update_btn_version": "⚡ Update to v{version} (1-click)",
@@ -25,7 +22,8 @@
     "history": "📜 Chat History",
     "profiles": "🎛 Profile: {profile}",
     "profile_switched_title": "Profile switched",
-    "profile_switched": "Active profile: {profile}"
+    "profile_switched": "Active profile: {profile}",
+    "already_running": "SCUM Chat Translator is already running. Look for its icon in the system tray (next to the clock)."
   },
   "overlay": {
     "lock": "🔒 Lock",
@@ -34,7 +32,6 @@
     "placeholder_input": "Translation will appear here...",
     "placeholder_type": "Type message text... (Enter to copy translation)",
     "hint_input": "💡 <b>Enter</b> — copy | <b>Esc</b> — close",
-    "copy_btn": "📋 Copy",
     "copy_btn_enter": "📋 Copy translation (Enter)",
     "clear_history": "Clear message history",
     "open_map": "Open SCUM Map and points list ({hotkey})",
@@ -89,7 +86,7 @@
     "map_reset_geo": "🔄 Reset map and waypoints window positions and size",
     "update_current_ver": "Current version: v{version}",
     "update_autocheck": "Automatically check for updates on startup",
-    "update_guarantee": "🛡️ <b>Data Safety Guarantee:</b> Program updates never overwrite your settings (config.json) or saved waypoints (points.json).",
+    "update_guarantee": "🛡️ <b>Data Safety Guarantee:</b> Program updates never overwrite your settings (config.json), waypoints (points.json), profiles (profiles.json) or players database (players.json).",
     "update_check_btn": "🔍 Check for Updates",
     "update_github_btn": "🌐 GitHub Repository",
     "update_checking": "⏳ Checking for updates on GitHub...",
@@ -152,17 +149,10 @@
     "sec_map": "Map & waypoints",
     "sec_hotkeys": "Keyboard shortcuts",
     "update_interval": "Check for updates every (hours, 0 = only at startup):",
-    "nav_players": "Players"
+    "nav_players": "Players",
+    "own_nickname_placeholder": "Your in-game nickname"
   },
   "map": {
-    "title": "SCUM Interactive Tactical Map",
-    "style_regular": "Satellite (Regular)",
-    "style_tactical": "Tactical",
-    "show_grid": "Sector Grid (D0-Z4)",
-    "show_keypads": "Keypads (k1-k9)",
-    "filter_all": "All",
-    "cursor_sector": "Sector: {sector} {keypad}",
-    "pin_color_title": "Choose map pin color",
     "custom_color": "🎨 Choose custom color..."
   },
   "points": {
@@ -170,9 +160,6 @@
     "search_placeholder": "🔍 Search by title or sector...",
     "btn_on_map": "🗺 On Map",
     "btn_copy": "📋 Copy",
-    "btn_delete": "Delete",
-    "btn_clear_all": "🗑 Clear All",
-    "base_players_placeholder": "Base players: e.g. Tanko, John",
     "btn_import": "📥 Import",
     "btn_export": "📤 Export",
     "tip_import": "Import waypoints from a JSON file",
@@ -207,7 +194,8 @@
     "window_title_html": "📌 <b>SCUM Chat Waypoints</b>",
     "btn_clear": "🧹 Clear",
     "tip_clear": "Delete all saved waypoints",
-    "hint_html": "💡 <i>You can rename a waypoint right in its row. Coordinates are saved automatically.</i>"
+    "hint_html": "💡 <i>You can rename a waypoint right in its row. Coordinates are saved automatically.</i>",
+    "import_bad_file": "The file is not a valid waypoint file (or contains no usable waypoints)."
   },
   "update": {
     "title_available": "Update available",
@@ -234,7 +222,41 @@
     "dialog_title": "Updates",
     "up_to_date": "You are running the latest version (v{version}).",
     "check_failed_title": "Update check failed",
-    "check_failed": "Could not check for updates on GitHub:\n{error}"
+    "check_failed": "Could not check for updates on GitHub:\n{error}",
+    "restart_failed": "The update was installed but the app could not restart: {error}"
+  },
+  "update_errors": {
+    "rate_limit": "GitHub rate limit reached. Try again in a few minutes.",
+    "http": "GitHub responded with HTTP {code}.",
+    "no_connection": "No connection to GitHub. Check your internet connection.",
+    "cancelled": "Download cancelled.",
+    "incomplete": "The download was incomplete. Please try again.",
+    "integrity": "The downloaded file failed the integrity check (SHA-256 mismatch).",
+    "write_denied": "Cannot write the update file (permission denied).",
+    "download_failed": "Download failed. Check your internet connection and try again.",
+    "backup_failed": "Could not back up your settings, so the update was cancelled: {detail}",
+    "unsafe_zip": "The update archive contains an unsafe path.",
+    "no_exe": "The update archive does not contain an application (.exe).",
+    "invalid_file": "The downloaded update is not a valid application file.",
+    "not_exe": "The downloaded update is not a Windows executable.",
+    "not_writable": "The installation folder is not writable. Move the application to a normal folder (for example Documents) or run it as administrator once.",
+    "source_run": "Automatic installation works only in the packaged .exe. The update was saved to:\n{path}",
+    "install_failed": "Could not install the update: {detail}",
+    "selftest_timeout": "The downloaded version did not start in time and was not installed. Your current version is unchanged.",
+    "selftest_start": "The downloaded version could not be started and was not installed: {detail}",
+    "selftest_failed": "The downloaded version failed its start-up check and was not installed. Your current version is unchanged. ({detail})",
+    "untrusted_url": "The update address is not a trusted GitHub address, so nothing was downloaded.",
+    "too_large": "The update is unexpectedly large and was not downloaded.",
+    "bad_name": "The update file name is not allowed, so nothing was downloaded.",
+    "changed": "The downloaded version changed while it was being checked and was not installed.",
+    "no_checksum": "No checksum is published for this update, so it cannot be verified and will not be installed automatically. The release page was opened: download the file from there."
+  },
+  "file_filters": {
+    "json": "JSON files (*.json)",
+    "all": "All files (*)",
+    "log": "Log files (*.log)",
+    "text": "Text files (*.txt)",
+    "csv": "CSV files (*.csv)"
   },
   "players": {
     "title": "Players",
@@ -310,7 +332,7 @@
     "variant_tactical": "🎯 Tactical",
     "grid": "▦ Grid",
     "tip_reset": "Fit the whole map",
-    "tip_close": "Close (Ctrl+M)",
+    "tip_close": "Close ({hotkey})",
     "hint": "💡 <b>Wheel</b>: zoom | <b>Drag</b>: pan | <b>Click marker</b>: select",
     "cursor_info": "📍 <b>{sector}</b> ({keypad}) | X={x} Y={y}",
     "title": "SCUM Island Map",

@@ -36,7 +36,7 @@ Tests run headless (`QT_QPA_PLATFORM=offscreen` is set automatically in CI).
 - Every user-visible string goes through `tr("section.key")`; add the key to `assets/locales/en.json`.
 - Code, comments and commit messages are in English.
 - New settings need a default in `core/config_manager.py` and a toggle in the settings window.
-- Never write user data inside the update flow (`config.json`, `points.json`, `profiles.json` are protected).
+- Never write user data inside the update flow (`config.json`, `points.json`, `profiles.json`, `players.json` are protected).
 
 ## Adding a language
 
@@ -44,6 +44,7 @@ See [docs/ADDING_A_LANGUAGE.md](docs/ADDING_A_LANGUAGE.md).
 
 ## Releasing
 
-1. Bump `__version__` in `core/version.py` and `version_info.txt`, update `CHANGELOG.md`.
-2. Commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z` — the workflow builds both executables.
+1. Bump `__version__` in `core/version.py`, `pyproject.toml`, `version_info.txt` and `version_info_portable.txt`, update `CHANGELOG.md`.
+2. Make sure the version in `core/version.py`, `pyproject.toml` and `version_info.txt` agree (a test checks it). Commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z` — the workflow builds both executables.
 3. The workflow publishes the release using `.github/release-notes/vX.Y.Z.md` (write that file before tagging); the in-app updater installs the `.exe` asset of the latest release.
+4. Before publishing, CI starts both built executables with `scripts/smoke_test_exe.ps1` (`--smoke-test`); a build that cannot start is never released. You can run the same check locally against `dist/*.exe`.

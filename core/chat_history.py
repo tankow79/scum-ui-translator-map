@@ -40,6 +40,7 @@ class ChatHistory:
         self._lock = threading.Lock()
         self.revision = 0
         self._lines_on_disk = 0
+        self._needs_newline = False
         if self.path:
             self._load()
 
@@ -134,7 +135,12 @@ class ChatHistory:
         if not self.path or not os.path.exists(self.path):
             return
         try:
-            with open(self.path, encoding="utf-8") as f:
+            with open(self.path, "rb") as raw:
+                raw.seek(0, os.SEEK_END)
+                if raw.tell() > 0:
+                    raw.seek(-1, os.SEEK_END)
+                    self._needs_newline = raw.read(1) != b"\n"  # a crash left a half-written last line
+            with open(self.path, encoding="utf-8", errors="replace") as f:
                 for line in f:
                     self._lines_on_disk += 1
                     try:
@@ -153,6 +159,9 @@ class ChatHistory:
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
             with open(self.path, "a", encoding="utf-8") as f:
+                if self._needs_newline:
+                    f.write("\n")
+                    self._needs_newline = False
                 f.write(json.dumps(asdict(entry), ensure_ascii=False) + "\n")
             self._lines_on_disk += 1
             if self._lines_on_disk > self.max_entries * 2:

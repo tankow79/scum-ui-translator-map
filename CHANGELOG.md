@@ -3,6 +3,32 @@
 All notable changes to this project are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+## [2.4.1] - 2026-11-13
+
+### Fixed
+- **Start-up crash of v2.4.0** (`ScumLogParser` lost `_running`). The release build and the updater now start the application in a `--smoke-test` mode and refuse to publish/install a build that cannot start.
+- Updates are safe: the downloaded build is self-tested before it replaces the current one, the previous build is kept until the new one has run healthy (it used to be deleted at start-up), and a new build that fails to start right after an update is rolled back automatically.
+- A new build that keeps crashing later than start-up (2 unclean runs in a row, each shorter than 10 minutes) is rolled back to the previous build; the previous build is removed only after 10 minutes of healthy running.
+- Importing thousands of waypoints no longer freezes the points window (rows are built in batches).
+- Unhandled exceptions in Qt slots and threads are logged instead of silently closing the app.
+- Malformed coordinates in chat (`{X=. Y=1 Z=2}`) could crash the app.
+- Log reading: a message that is still being written is no longer cut in half; changing the log path in Settings takes effect immediately; the chat backlog replayed at start no longer adds duplicate waypoints.
+- Failed translations are no longer cached forever; the translation cache is bounded.
+- `config.json`, `points.json`, `profiles.json`, `players.json` are written atomically; an unreadable file is kept as `*.corrupt-<time>` instead of being overwritten; saving settings writes the file once; moving windows no longer writes it on every mouse move.
+- Settings: cancelled edits no longer reappear; creating a profile notifies the running app; opacity no longer drifts by 1% per save.
+- Update dialog: cancelling a download is not reported as an error, closing during installation is blocked, and the restart safety net actually fires.
+- Overlay: the chat is not rebuilt every 500 ms (scrolling works again), Enter no longer freezes on a network error.
+- Map: re-opening keeps zoom/position and the focus on a waypoint; the tactical map is no longer replaced by an empty image.
+- Chat messages are shown in chat order even when translations finish at different times (a hanging translation waits at most 6 s).
+- `SCUM.log` is opened so the game can still rotate it to `SCUM-backup-*.log`, and a rotated log is detected and followed.
+- Update errors, file-dialog filters and the nickname placeholder are translated; the portable edition is recognised by a bundled flag, not by the exe name; a damaged `config.json` never replaces a good update backup.
+- CI builds the real executables and starts them on every push; builds use pinned, tested dependency versions; Python 3.12/3.13 are the supported versions.
+- **Map performance:** panning and zooming no longer stutter or lower the game's frame rate. Only the visible part of the map is drawn, redraws are limited to ~60 per second while moving (full quality returns when you stop), and every pin with its name tag is rendered once and reused (about 6x faster with 150 pins on screen).
+- Hand-edited values of the wrong type in `config.json` fall back to the default instead of crashing the start; a second launch now says the app is already running; the portable build has its own version resource; a replace-import of a file without valid waypoints no longer wipes your waypoints.
+- History export adds the file extension; the old-nickname delete button removes the right entry; the colour-dialog guard works.
+
 ## [2.4.0]
 
 ### Added

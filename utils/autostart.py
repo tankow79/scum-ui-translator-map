@@ -14,6 +14,8 @@ def set_autostart(enable: bool, exe_path: Optional[str] = None) -> bool:
     Safe, needs no administrator rights (UAC) and is supported on Windows 10/11.
     """
     if exe_path is None:
+        if not getattr(sys, "frozen", False):
+            return False  # from source sys.executable is a bare python.exe: registering it would launch nothing useful
         exe_path = sys.executable
 
     try:

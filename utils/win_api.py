@@ -6,9 +6,28 @@ from ctypes import wintypes
 
 log = logging.getLogger("scum.winapi")
 
-user32 = ctypes.windll.user32
-kernel32 = ctypes.windll.kernel32
-psapi = ctypes.windll.psapi
+# Private library objects (not ctypes.windll's shared ones) so the declarations below cannot affect other libraries
+user32 = ctypes.WinDLL("user32")
+kernel32 = ctypes.WinDLL("kernel32")
+psapi = ctypes.WinDLL("psapi")
+
+# Explicit signatures: handles are pointer sized, the ctypes default (C int) would truncate them on 64-bit Windows
+user32.IsWindow.argtypes = [wintypes.HWND]
+user32.IsWindow.restype = wintypes.BOOL
+user32.IsIconic.argtypes = [wintypes.HWND]
+user32.IsIconic.restype = wintypes.BOOL
+user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+user32.FindWindowW.restype = wintypes.HWND
+user32.GetForegroundWindow.argtypes = []
+user32.GetForegroundWindow.restype = wintypes.HWND
+user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+kernel32.OpenProcess.restype = wintypes.HANDLE
+kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+kernel32.CloseHandle.restype = wintypes.BOOL
+kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
 
 GWL_EXSTYLE = -20
 WS_EX_TRANSPARENT = 0x00000020
@@ -211,7 +230,8 @@ def is_scum_running(target_name: str = "scum") -> bool:
                 sz = wintypes.DWORD(512)
                 if kernel32.QueryFullProcessImageNameW(h_proc, 0, buf, ctypes.byref(sz)):
                     name = os.path.basename(buf.value).lower()
-                    if target in name:
+                    # Skip ourselves: "SCUM_Chat_Translator.exe" also contains "scum"
+                    if target in name and pid != os.getpid() and "translator" not in name:
                         kernel32.CloseHandle(h_proc)
                         return True
                 kernel32.CloseHandle(h_proc)

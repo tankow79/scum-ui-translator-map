@@ -1,8 +1,14 @@
+import copy
 import json
 import logging
+import math
 import os
 import sys
+import threading
+from contextlib import contextmanager
 from typing import Any, Dict, Optional
+
+from core.fileio import atomic_write_json, quarantine_corrupt
 
 log = logging.getLogger("scum.config")
 
@@ -85,7 +91,10 @@ def get_portable_config_path(filename: str = "config.json") -> str:
     or next to the project root when running from Python.
     This keeps the app fully portable across computers.
     """
-    if getattr(sys, "frozen", False):
+    override = os.environ.get("SCUM_DATA_DIR")
+    if override:
+        base_dir = override
+    elif getattr(sys, "frozen", False):
         base_dir = os.path.dirname(sys.executable)
     else:
         # Project folder (one level above core/)
@@ -99,6 +108,9 @@ class ConfigManager:
             config_path = get_portable_config_path("config.json")
         self.config_path = config_path
         self.config: Dict[str, Any] = {}
+        self._lock = threading.RLock()
+        self._batch_depth = 0
+        self._dirty = False
         self.load()
 
     def load(self) -> Dict[str, Any]:
@@ -106,31 +118,84 @@ class ConfigManager:
             try:
                 with open(self.config_path, encoding="utf-8") as f:
                     data = json.load(f)
-                    self.config = {**DEFAULT_CONFIG, **data}
+                    if not isinstance(data, dict):
+                        raise ValueError("config.json is not a JSON object")
+                    self.config = self._sanitize({**copy.deepcopy(DEFAULT_CONFIG), **data})
             except Exception as e:
                 log.warning("Failed to load %s: %s; using default settings.", self.config_path, e)
-                self.config = DEFAULT_CONFIG.copy()
+                quarantine_corrupt(self.config_path)  # keep the unreadable file; the next save must not erase it
+                self.config = copy.deepcopy(DEFAULT_CONFIG)
         else:
-            self.config = DEFAULT_CONFIG.copy()
+            self.config = copy.deepcopy(DEFAULT_CONFIG)
             self.save()
         return self.config
 
+    @staticmethod
+    def _sanitize(config: Dict[str, Any]) -> Dict[str, Any]:
+        """Replace a hand-edited value of the wrong type by the default (a bad value must not crash start-up)."""
+        for key, default in DEFAULT_CONFIG.items():
+            value = config.get(key, default)
+            ok = True
+            if isinstance(default, bool):
+                ok = isinstance(value, bool)
+            elif isinstance(default, (int, float)):
+                ok = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+                if ok and isinstance(default, int) and isinstance(value, float):
+                    value = int(value)
+            elif isinstance(default, str):
+                ok = isinstance(value, str)
+            elif isinstance(default, list):
+                ok = isinstance(value, (list, str))   # nickname/word lists may also be comma separated text
+            elif isinstance(default, dict):
+                ok = isinstance(value, dict)
+            if ok:
+                config[key] = value
+            else:
+                log.warning("config.json: %r has an invalid value %r; using the default", key, value)
+                config[key] = copy.deepcopy(default)
+        return config
+
     def save(self):
         try:
-            # Create the directory if it does not exist yet
-            parent_dir = os.path.dirname(self.config_path)
-            if parent_dir and not os.path.exists(parent_dir):
-                os.makedirs(parent_dir, exist_ok=True)
-            with open(self.config_path, "w", encoding="utf-8") as f:
-                json.dump(self.config, f, indent=2, ensure_ascii=False)
+            with self._lock:
+                snapshot = copy.deepcopy(self.config)
+            atomic_write_json(self.config_path, snapshot)
         except Exception as e:
             log.error("Failed to save config.json: %s", e)
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.config.get(key, default)
 
-    def set(self, key: str, value: Any):
-        self.config[key] = value
+    def set(self, key: str, value: Any, save: bool = True):
+        with self._lock:
+            self.config[key] = value
+            if not save:
+                return
+            if self._batch_depth > 0:
+                self._dirty = True
+                return
+        self.save()
+
+    @contextmanager
+    def batch(self):
+        """Group many ``set`` calls into a single write of config.json."""
+        with self._lock:
+            self._batch_depth += 1
+        try:
+            yield self
+        finally:
+            with self._lock:
+                self._batch_depth -= 1
+                flush = self._batch_depth == 0 and self._dirty
+                if flush:
+                    self._dirty = False
+            if flush:
+                self.save()
+
+    def update(self, values: Dict[str, Any]):
+        """Set several keys and write the file once."""
+        with self._lock:
+            self.config.update(values)
         self.save()
 
     def get_resolved_log_path(self) -> str:

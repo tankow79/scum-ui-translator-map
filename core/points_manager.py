@@ -10,6 +10,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from core.config_manager import get_portable_config_path
 from core.coordinate_parser import POINT_CATEGORIES, MapPoint, detect_category_from_name
+from core.fileio import atomic_write_json, quarantine_corrupt
 from core.players import PlayerRegistry, split_players
 
 log = logging.getLogger("scum.points")
@@ -68,20 +69,15 @@ class PointsManager(QObject):
                                 log.warning("Failed to read point: %s", pe)
             except Exception as e:
                 log.error("Failed to load %s: %s", self.file_path, e)
+                quarantine_corrupt(self.file_path)
 
         # Sort from newest to oldest
         self._points.sort(key=lambda p: p.created_timestamp, reverse=True)
 
     def save(self):
         """Write points.json atomically (temp file + replace) so a crash never corrupts it."""
-        tmp_path = self.file_path + ".tmp"
         try:
-            parent_dir = os.path.dirname(self.file_path)
-            if parent_dir and not os.path.exists(parent_dir):
-                os.makedirs(parent_dir, exist_ok=True)
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump([p.to_dict() for p in self._points], f, indent=2, ensure_ascii=False)
-            os.replace(tmp_path, self.file_path)
+            atomic_write_json(self.file_path, [p.to_dict() for p in self._points])
         except OSError as e:
             log.error("Could not save %s: %s", self.file_path, e)
 
@@ -123,8 +119,12 @@ class PointsManager(QObject):
                 if not isinstance(item, dict) or "x" not in item or "y" not in item:
                     raise ValueError("missing coordinates")
                 parsed.append(MapPoint.from_dict(item))
-            except (ValueError, TypeError, KeyError):
+            except Exception:  # any malformed entry is counted as invalid, never aborts the import
                 result.invalid += 1
+
+        if replace and not parsed:
+            # Replacing with nothing would wipe every waypoint for a file that has no usable entry
+            raise ValueError("No valid waypoints found in the file")
 
         if replace and os.path.exists(self.file_path):
             try:
@@ -152,10 +152,10 @@ class PointsManager(QObject):
         return result
 
     def add_point(self, point: MapPoint) -> bool:
-        # Duplicate guard (same coordinates within 2 seconds)
-        if self._points:
-            first = self._points[0]
-            if first.raw_coord == point.raw_coord and abs(first.created_timestamp - point.created_timestamp) < 2.0:
+        # Duplicate guard: the same coordinates with the same name are never added twice (also covers the
+        # chat backlog that is replayed every time the app starts).
+        for existing in self._points:
+            if existing.raw_coord == point.raw_coord and existing.name == point.name:
                 return False
 
         # Insert at the start of the list (newest point on top)

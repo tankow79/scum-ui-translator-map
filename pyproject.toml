@@ -1,21 +1,21 @@
 [project]
 name = "scum-chat-translator"
-version = "2.4.0"
+version = "2.4.1"
 description = "SCUM tactical map and real-time chat translator overlay for Windows"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
-    "PyQt6>=6.6.0",
-    "requests>=2.31.0",
-    "pynput>=1.7.6",
+    "PyQt6>=6.6.0,<7",
+    "requests>=2.31.0,<3",
+    "pynput>=1.7.6,<2",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
-    "pyinstaller>=6.9",
+    "pyinstaller>=6.9,<7",
 ]
 
 [tool.pytest.ini_options]

@@ -1,8 +1,10 @@
 import logging
 import os
 import sys
+import tempfile
 import threading
 import time
+import traceback
 from typing import Optional
 
 from PyQt6.QtCore import QRect, Qt, QTimer
@@ -23,9 +25,9 @@ from core.players import PlayerRegistry
 from core.points_manager import PointsManager
 from core.profiles import ProfileManager
 from core.translator import GoogleTranslatorEngine
-from core.updater import UpdateChecker, UpdateInfo, UpdateInstaller
+from core.updater import UpdateChecker, UpdateInfo, UpdateInstaller, localize_error
 from core.version import __version__
-from ui.color_picker import is_color_dialog_active
+from ui.color_picker import color_dialog_active
 from ui.history_window import HistoryWindow
 from ui.map_window import MapWindow
 from ui.overlay import ChatOverlay
@@ -84,11 +86,65 @@ def create_tray_icon_pixmap(has_update: bool = False) -> QPixmap:
     return pixmap
 
 
-def main():
+def _tell_already_running():
+    """A second copy was started: say so (the first one lives in the tray) instead of vanishing silently."""
+    try:
+        import ctypes
+
+        LocalizationManager.get_instance().set_locale(ConfigManager().get("ui_language", "en"))
+        ctypes.windll.user32.MessageBoxW(0, tr("tray.already_running"), tr("tray.tooltip", version=__version__), 0x40)
+    except Exception:
+        logging.getLogger("scum").exception("Could not show the already-running notice")
+
+
+def _install_exception_hooks():
+    """An exception in a Qt slot or a worker thread is logged instead of silently killing the app."""
+    hook_log = logging.getLogger("scum")
+
+    def excepthook(exc_type, exc, tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc, tb)
+            return
+        hook_log.critical("Unhandled exception", exc_info=(exc_type, exc, tb))
+
+    def thread_hook(args):
+        if args.exc_type is SystemExit:
+            return
+        hook_log.critical("Unhandled exception in thread %s", getattr(args.thread, "name", "?"),
+                          exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+
+    sys.excepthook = excepthook
+    threading.excepthook = thread_hook
+
+
+def _cfg_number(cfg, key: str, default, cast=int):
+    """A number from config.json; a hand-edited bad value falls back to the default instead of crashing."""
+    try:
+        return cast(cfg.get(key, default) or 0)
+    except (TypeError, ValueError):
+        return default
+
+
+def _write_smoke_result(text: str):
+    try:
+        with open(os.path.join(os.environ.get("SCUM_DATA_DIR", ""), "smoke-result.txt"), "w", encoding="utf-8") as f:
+            f.write(text)
+    except OSError:
+        pass
+
+
+def _run():
+    # --smoke-test: full start-up in an isolated data folder, a few self-checks, then exit (0 = healthy).
+    # Used by the release build and by the updater before it installs a downloaded version.
+    smoke = "--smoke-test" in sys.argv
+    if smoke and not os.environ.get("SCUM_DATA_DIR"):
+        os.environ["SCUM_DATA_DIR"] = tempfile.mkdtemp(prefix="scum_smoke_")
     setup_logging()
+    _install_exception_hooks()
     # Guard against running several copies; a freshly updated process waits for its predecessor to exit.
     post_update = "--post-update" in sys.argv
-    if not check_single_instance(wait_seconds=15.0 if post_update else 0.0):
+    if not smoke and not check_single_instance(wait_seconds=15.0 if post_update else 0.0):
+        _tell_already_running()
         sys.exit(0)
 
     # High-DPI scaling setup for 2K/4K and laptop screens
@@ -110,12 +166,42 @@ def main():
         app.setWindowIcon(QIcon(create_tray_icon_pixmap()))
 
     # A user file that vanished or got corrupted during an update is restored before settings are loaded.
-    UpdateInstaller.restore_damaged_user_data()
+    if not smoke:
+        UpdateInstaller.restore_damaged_user_data()
     cfg = ConfigManager()
+    if smoke:
+        sample_log = os.path.join(os.environ["SCUM_DATA_DIR"], "smoke_SCUM.log")
+        with open(sample_log, "w", encoding="utf-8") as f:
+            f.write("[2026.11.13-01.54.49:390][201]LogSCUM: Message from user: SmokeTester (76561198000000001) (hash: ABCDEF0123)\n")
+            f.write("[2026.11.13-01.54.49:390][201]LogSCUM: Message: SmokeTester: hello world\n")
+        cfg.set("log_file_path", sample_log)
+        cfg.set("auto_check_updates", False)
     LocalizationManager.get_instance().set_locale(cfg.get("ui_language", "en"))
-    UpdateInstaller.cleanup_leftovers()
-    # Once the app has been running fine for a while, the update backups are no longer needed.
-    QTimer.singleShot(15000, UpdateInstaller.remove_backups)
+    if not smoke:
+        UpdateInstaller.cleanup_leftovers()
+
+        # The previous build (kept for rollback) goes only after this one has run healthy for a while.
+        # A build that crashes again and again (also later than start-up) is rolled back to the previous one.
+        strikes = UpdateInstaller.record_run_start(__version__)
+        if UpdateInstaller.should_roll_back(strikes):
+            restored = UpdateInstaller.rollback_failed_update()
+            if restored:
+                log.error("This build crashed %d times in a row; the previous build was restored", strikes)
+                UpdateInstaller.restart_application(restored)
+                sys.exit(1)
+
+        def confirm_healthy_start():
+            UpdateInstaller.remove_backups()
+
+        QTimer.singleShot(15000, confirm_healthy_start)
+
+        def heartbeat():
+            if UpdateInstaller.record_heartbeat() >= UpdateInstaller.HEALTHY_AFTER_SECONDS:
+                UpdateInstaller.remove_previous_versions()
+
+        heartbeat_timer = QTimer()
+        heartbeat_timer.timeout.connect(heartbeat)
+        heartbeat_timer.start(30000)
 
     translator = GoogleTranslatorEngine(
         target_lang=cfg.get("target_language", "en"),
@@ -124,7 +210,7 @@ def main():
 
     history_path = (os.path.join(get_user_data_dir(), "chat_history.jsonl")
                     if cfg.get("history_save_to_disk", True) else None)
-    history = ChatHistory(max_entries=int(cfg.get("history_max_entries", 5000)), path=history_path)
+    history = ChatHistory(max_entries=_cfg_number(cfg, "history_max_entries", 5000), path=history_path)
     profiles = ProfileManager(cfg)
     controller = AppController(cfg, translator, history=history, chat_filter=ChatFilter(cfg.config))
     history_win = HistoryWindow(history)
@@ -328,7 +414,7 @@ def main():
             return
 
         # If any modal dialog is open (color picker, settings, players, etc.), do not hide windows
-        if QApplication.activeModalWidget() is not None or is_color_dialog_active:
+        if QApplication.activeModalWidget() is not None or color_dialog_active():
             return
 
         active = is_game_foreground("scum", allow_own_process=True)
@@ -372,8 +458,8 @@ def main():
 
     def on_settings_changed():
         LocalizationManager.get_instance().set_locale(cfg.get("ui_language", "en"))
-        history.set_max_entries(int(cfg.get("history_max_entries", 5000)))
-        new_hours = float(cfg.get("update_check_interval_hours", 6) or 0)
+        history.set_max_entries(_cfg_number(cfg, "history_max_entries", 5000))
+        new_hours = _cfg_number(cfg, "update_check_interval_hours", 6, float)
         if new_hours > 0:
             update_timer.start(int(new_hours * 3600 * 1000))
         else:
@@ -557,7 +643,7 @@ def main():
             QMessageBox.warning(
                 None,
                 tr("update.check_failed_title"),
-                tr("update.check_failed", error=err_text),
+                tr("update.check_failed", error=localize_error(err_text)),
                 QMessageBox.StandardButton.Ok
             )
 
@@ -642,17 +728,19 @@ def main():
 
     tray.activated.connect(on_tray_activated)
     tray.setContextMenu(tray_menu)
-    tray.show()
+    if not smoke:
+        tray.show()
 
     # Background update checks: shortly after start, then every `update_check_interval_hours` (if > 0).
     def background_update_check():
         if cfg.get("auto_check_updates", True) and cached_update_info is None:
             update_checker.check_for_updates_async()
 
-    QTimer.singleShot(4000, background_update_check)
+    if not smoke:
+        QTimer.singleShot(4000, background_update_check)
     update_timer = QTimer()
     update_timer.timeout.connect(background_update_check)
-    interval_h = float(cfg.get("update_check_interval_hours", 6) or 0)
+    interval_h = _cfg_number(cfg, "update_check_interval_hours", 6, float)
     if interval_h > 0:
         update_timer.start(int(interval_h * 3600 * 1000))
 
@@ -667,11 +755,60 @@ def main():
 
     log.info("SCUM Chat Translator v%s started", __version__)
 
+    if smoke:
+        smoke_deadline = time.monotonic() + 25.0
+
+        def collect_problems():
+            problems = []
+            if log_parser is None or log_parser._thread is None or not log_parser._thread.is_alive():
+                problems.append("log parser thread is not running")
+            if len(LocalizationManager.get_instance().available_locales()) < 2 or tr("tray.settings") == "tray.settings":
+                problems.append("language files are missing from the build")
+            if not any(not img.isNull() for img in map_win.canvas.map_images.values()):
+                problems.append("map images are missing from the build")
+            if player_registry.get("76561198000000001") is None:
+                problems.append("player registry did not learn the sample SteamID")
+            return problems
+
+        def poll_smoke_test():
+            problems = collect_problems()
+            if problems and time.monotonic() < smoke_deadline:
+                return  # slow machine: look again shortly
+            smoke_timer.stop()
+            _write_smoke_result("OK" if not problems else "FAIL: " + "; ".join(problems))
+            app.exit(0 if not problems else 2)
+
+        smoke_timer = QTimer()
+        smoke_timer.timeout.connect(poll_smoke_test)
+        smoke_timer.start(300)
+
     ret = app.exec()
+    if not smoke:
+        UpdateInstaller.record_clean_exit()
     if log_parser is not None:
         log_parser.stop()
     hotkey_manager.stop()
     sys.exit(ret)
+
+
+def main():
+    try:
+        _run()
+    except SystemExit:
+        raise
+    except Exception:
+        tb = traceback.format_exc()
+        logging.getLogger("scum").critical("Fatal error during start-up:\n%s", tb)
+        if "--smoke-test" in sys.argv:
+            _write_smoke_result("FAIL: " + tb.strip().splitlines()[-1])
+            sys.exit(1)
+        # A freshly installed build (first run after an update) that cannot start must not strand the user:
+        # bring the previous one back. Any other start-up failure is not an update problem: never downgrade.
+        restored = UpdateInstaller.rollback_failed_update() if "--post-update" in sys.argv else None
+        if restored:
+            UpdateInstaller.restart_application(restored)
+            sys.exit(1)
+        raise
 
 
 if __name__ == "__main__":

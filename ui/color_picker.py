@@ -10,6 +10,10 @@ from core.i18n import tr
 is_color_dialog_active: bool = False
 
 
+def color_dialog_active() -> bool:
+    return is_color_dialog_active
+
+
 def open_safe_color_dialog(
     parent: Optional[QWidget],
     initial_hex: str = "#38bdf8",
