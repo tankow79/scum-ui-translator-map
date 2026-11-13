@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QPushButton,
     QSizeGrip,
@@ -33,6 +34,7 @@ from core.chat_color import (
 from core.config_manager import ConfigManager
 from core.i18n import tr
 from core.languages import ALL_LANGUAGES
+from ui.screen_utils import has_saved_position, screen_geometry_for
 from utils.win_api import (
     force_foreground_window,
     keep_on_top,
@@ -54,6 +56,46 @@ class OutlinedChatBrowser(QTextBrowser):
         self.font_bold = False
         self.font_size = 22
         self.viewport().installEventFilter(self)
+
+        # "New messages" pill: shown while the user has scrolled up and newer messages have arrived
+        self.jump_button = QPushButton(tr("overlay.new_messages"), self)
+        self.jump_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.jump_button.setStyleSheet(
+            "QPushButton { background-color: rgba(15, 23, 42, 235); color: #f1f5f9; border: 1px solid #38bdf8;"
+            " border-radius: 12px; padding: 3px 14px; font: 600 12px 'Segoe UI'; }"
+            "QPushButton:hover { background-color: #1e3a5f; }")
+        self.jump_button.adjustSize()
+        self.jump_button.hide()
+        self.jump_button.clicked.connect(self.scroll_to_latest)
+        self.verticalScrollBar().valueChanged.connect(self._on_scrolled)
+
+    def at_bottom(self) -> bool:
+        bar = self.verticalScrollBar()
+        return bar.value() >= bar.maximum() - 4
+
+    def scroll_to_latest(self):
+        bar = self.verticalScrollBar()
+        bar.setValue(bar.maximum())
+        self.jump_button.hide()
+
+    def _on_scrolled(self, _value: int):
+        if self.at_bottom():
+            self.jump_button.hide()
+
+    def show_jump_button(self):
+        self.jump_button.setText(tr("overlay.new_messages"))
+        self.jump_button.adjustSize()
+        self._place_jump_button()
+        self.jump_button.show()
+        self.jump_button.raise_()
+
+    def _place_jump_button(self):
+        b = self.jump_button
+        b.move(max(0, (self.width() - b.width()) // 2), max(0, self.height() - b.height() - 8))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_jump_button()
 
     def eventFilter(self, obj, event):
         if obj is self.viewport() and event.type() == QEvent.Type.Paint:
@@ -121,6 +163,7 @@ class ChatOverlay(QWidget):
     test_requested = pyqtSignal()
     translate_and_copy = pyqtSignal(str, str)  # (original, translated)
     live_translation_ready = pyqtSignal(int, str)  # (request_id, translated_text)
+    copy_ready = pyqtSignal(str, str)              # (original, translation) from a background translation
 
     def __init__(self, config_manager: ConfigManager):
         super().__init__()
@@ -136,6 +179,8 @@ class ChatOverlay(QWidget):
         self._live_executor = ThreadPoolExecutor(max_workers=1)
         self._live_req_id = 0
         self.live_translation_ready.connect(self._on_live_translation_ready)
+        self.copy_ready.connect(self._finish_copy)
+        self._copy_pending = False
 
         # Live translation debounce
         self._debounce_timer = QTimer(self)
@@ -167,6 +212,9 @@ class ChatOverlay(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(8, 8, 8, 8)
         self.main_layout.setSpacing(6)
+        # The window can never be smaller than its content needs (a saved or dragged size that is too small used to
+        # cut off the quick-chat bar at the right/bottom)
+        self.main_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
 
         self._build_header_bar()
         self._build_chat_view()
@@ -531,6 +579,9 @@ class ChatOverlay(QWidget):
             self._debounce_timer.stop()
             self.lbl_translation.setText(f"<i>{tr('overlay.placeholder_input')}</i>")
             return
+        # The text changed: the old translation (and any answer still on its way) no longer belongs to it
+        self._current_translation = ""
+        self._live_req_id += 1
         # 450 ms timer keeps typing from causing UI stalls
         self._debounce_timer.start(450)
 
@@ -568,23 +619,37 @@ class ChatOverlay(QWidget):
         if not orig:
             self.set_in_chat_mode(False)
             return
-
-        # If Enter was pressed before the debounce finished, translate immediately
-        if not self._current_translation or self.lbl_translation.text() in (f"<i>{tr('overlay.translating')}</i>", f"<i>{tr('overlay.placeholder_input')}</i>"):
-            if self._translator:
-                my_lang = self.combo_src.currentData() or "uk"
-                target_lang = self.combo_tgt.currentData() or "en"
-                try:
-                    trans, _ = self._translator.translate_custom(orig, target=target_lang, source=my_lang)
-                except Exception:  # network failure: fall back to the original text instead of crashing
-                    trans = orig
-                self._current_translation = trans
-                self.lbl_translation.setText(trans)
-
         if self._current_translation:
-            QApplication.clipboard().setText(self._current_translation)
-            self.translate_and_copy.emit(orig, self._current_translation)
+            self._finish_copy(orig, self._current_translation)
+            return
+        # Enter was pressed before the live translation of this exact text arrived: translate it in the background
+        # (a blocking network call here would freeze the overlay, and with it the game's input, on a bad connection)
+        if self._translator is None:
+            self._finish_copy(orig, orig)
+            return
+        if self._copy_pending:
+            return
+        self._copy_pending = True
+        my_lang = self.combo_src.currentData() or "uk"
+        target_lang = self.combo_tgt.currentData() or "en"
 
+        def worker():
+            try:
+                trans, _ = self._translator.translate_custom(orig, target=target_lang, source=my_lang)
+            except Exception:       # network failure: the original text is better than nothing
+                trans = orig
+            self.copy_ready.emit(orig, trans or orig)
+
+        self._live_executor.submit(worker)
+
+    def _finish_copy(self, orig: str, translation: str):
+        self._copy_pending = False
+        if self.input_field.text().strip() != orig:
+            return                  # the user kept typing: this answer is for older text
+        self._current_translation = translation
+        self.lbl_translation.setText(translation)
+        QApplication.clipboard().setText(translation)
+        self.translate_and_copy.emit(orig, translation)
         # Hide chat mode right away and return focus to the SCUM game
         self.set_in_chat_mode(False)
 
@@ -637,18 +702,16 @@ class ChatOverlay(QWidget):
     # ──────────────────────── Chat mode and controls ──────────────────
 
     def apply_config_geometry(self):
-        screen = QApplication.primaryScreen()
-        screen_geo = screen.availableGeometry() if screen else None
-
-        screen_w = screen_geo.width() if screen_geo else 1920
-        screen_h = screen_geo.height() if screen_geo else 1080
-        screen_x = screen_geo.x() if screen_geo else 0
-        screen_y = screen_geo.y() if screen_geo else 0
-
         saved_x = self.cfg.get("overlay_x", -1)
         saved_y = self.cfg.get("overlay_y", -1)
         saved_w = self.cfg.get("overlay_width", -1)
         saved_h = self.cfg.get("overlay_height", -1)
+
+        # The monitor the window was saved on (the game may run on the second one)
+        screen_geo = screen_geometry_for(saved_x, saved_y, saved_w if saved_w and saved_w > 0 else 0,
+                                         saved_h if saved_h and saved_h > 0 else 0)
+        screen_w, screen_h = screen_geo.width(), screen_geo.height()
+        screen_x, screen_y = screen_geo.x(), screen_geo.y()
 
         # 1. Adaptive proportional sizes for any screen (1366x768 to 1440p / 4K)
         default_w = max(520, min(int(screen_w * 0.36), 850))
@@ -661,7 +724,7 @@ class ChatOverlay(QWidget):
         default_x = screen_x + max(25, int(screen_w * 0.025))
         default_y = screen_y + screen_h - h - max(60, int(screen_h * 0.08))
 
-        if saved_x is None or saved_x < 0 or saved_y is None or saved_y < 0:
+        if not has_saved_position(saved_x, saved_y):
             x = default_x
             y = default_y
         else:
@@ -706,11 +769,21 @@ class ChatOverlay(QWidget):
         self.in_chat_mode = in_chat
         self._update_panels_visibility()
         self._refresh_rendered_chat()
+        if not in_chat:
+            self.chat_view.scroll_to_latest()   # chat closed: show the newest messages again
 
         if in_chat:
             self.focus_input()
         else:
             self.close_input()
+        self._repaint_layered()
+
+    def _repaint_layered(self):
+        """A translucent top-level window keeps showing a stale bitmap after its style or content changed until the
+        next paint; force a full repaint now and once more after the event loop settled (no ghost pieces)."""
+        self.update()
+        self.chat_view.viewport().update()
+        QTimer.singleShot(0, self.repaint)
 
     def _update_panels_visibility(self):
         """Control panel visibility."""
@@ -770,7 +843,10 @@ class ChatOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        opacity = self.cfg.get("bg_opacity", 0.5)
+        try:
+            opacity = max(0.0, min(1.0, float(self.cfg.get("bg_opacity", 0.5))))   # a hand-edited 1.5 gave an invalid colour
+        except (TypeError, ValueError):
+            opacity = 0.5
         mode = self.cfg.get("ui_display_mode", "none")
         alpha = int(opacity * 255)
         rect = self.rect().adjusted(1, 1, -1, -1)
@@ -827,7 +903,7 @@ class ChatOverlay(QWidget):
             set_click_through(hwnd, False)
             keep_on_top(hwnd)
 
-        self.update()
+        self._repaint_layered()
 
     # ──────────────────────── Chat messages ─────────────────────────
 
@@ -843,6 +919,7 @@ class ChatOverlay(QWidget):
             created_time=time.time()
         )
         self._entries.append(entry)
+        self._added_total = getattr(self, "_added_total", 0) + 1   # never shrinks, unlike the capped list
 
         max_msgs = max(1, int(self.cfg.get("max_messages", 20) or 20))
         if len(self._entries) > max_msgs:
@@ -865,6 +942,8 @@ class ChatOverlay(QWidget):
             if self.chat_view.toPlainText():
                 self.chat_view.clear()
                 self._last_rendered_html = None
+                self._rendered_total = getattr(self, "_added_total", 0)
+                self.chat_view.jump_button.hide()
                 self.update()
             return
 
@@ -928,21 +1007,38 @@ class ChatOverlay(QWidget):
             html_parts.append(part)
 
         rendered = "".join(html_parts)
+        view = self.chat_view
+        has_newer = getattr(self, "_added_total", 0) > getattr(self, "_rendered_total", 0)
         if rendered == getattr(self, "_last_rendered_html", None):
-            self.chat_view.viewport().update()  # e.g. the outline setting changed
+            view.viewport().update()  # e.g. the outline setting changed
             return  # nothing changed: do not rebuild the document or yank the scroll position
+        bar = view.verticalScrollBar()
+        was_at_bottom = view.at_bottom()
+        if not was_at_bottom and view.textCursor().hasSelection():
+            # The reader is selecting text to copy it: do not destroy the selection, update later
+            if has_newer:
+                view.show_jump_button()
+            return
+        old_value = bar.value()
         self._last_rendered_html = rendered
-        bar = self.chat_view.verticalScrollBar()
-        was_at_bottom = bar.value() >= bar.maximum() - 4
-        self.chat_view.setHtml(rendered)
-        if was_at_bottom or not self.in_chat_mode:
+        self._rendered_total = getattr(self, "_added_total", 0)
+        view.setHtml(rendered)
+        if was_at_bottom:
             bar.setValue(bar.maximum())
-        self.chat_view.viewport().update()
+            view.jump_button.hide()
+        else:
+            bar.setValue(min(old_value, bar.maximum()))   # the reader keeps their place
+            if has_newer:
+                view.show_jump_button()
+        view.viewport().update()
         self.update()
 
     def clear_chat(self):
         self._entries.clear()
         self.chat_view.clear()
+        self._last_rendered_html = None
+        self._rendered_total = getattr(self, "_added_total", 0)
+        self.chat_view.jump_button.hide()
         self.update()
 
     # ──────────────────────── Key and mouse events ───────────────────────

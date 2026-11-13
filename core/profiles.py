@@ -9,6 +9,7 @@ import copy
 import json
 import logging
 import os
+import threading
 from typing import Any, Dict, List, Optional
 
 from core.config_manager import ConfigManager, get_portable_config_path
@@ -30,12 +31,21 @@ PROFILE_KEYS = (
 )
 
 
+class ProfileError(ValueError):
+    """A profile operation that cannot be done. ``code`` is shown to the user translated (settings.profile_err_<code>)."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
 class ProfileManager:
     def __init__(self, cfg: ConfigManager, path: Optional[str] = None):
         self.cfg = cfg
         self.path = path or get_portable_config_path("profiles.json")
         self.profiles: Dict[str, Dict[str, Any]] = {}
         self.active: str = DEFAULT_PROFILE
+        self._save_lock = threading.Lock()   # snapshot + write are one step
         self._load()
         if DEFAULT_PROFILE not in self.profiles:
             self.profiles[DEFAULT_PROFILE] = self._snapshot()
@@ -58,7 +68,7 @@ class ProfileManager:
             if not isinstance(profiles, dict):
                 raise ValueError("'profiles' is not an object")   # keep the file; do not overwrite it with an empty set
             if isinstance(profiles, dict):
-                self.profiles = {str(n): {k: v for k, v in p.items() if k in PROFILE_KEYS}
+                self.profiles = {str(n): ConfigManager.sanitize_values({k: v for k, v in p.items() if k in PROFILE_KEYS})
                                  for n, p in profiles.items() if isinstance(p, dict)}
             active = data.get("active")
             if isinstance(active, str) and active in self.profiles:
@@ -70,7 +80,8 @@ class ProfileManager:
 
     def _save(self):
         try:
-            atomic_write_json(self.path, {"active": self.active, "profiles": self.profiles})
+            with self._save_lock:
+                atomic_write_json(self.path, {"active": self.active, "profiles": self.profiles})
         except OSError as exc:
             log.error("Could not save profiles: %s", exc)
 
@@ -83,9 +94,9 @@ class ProfileManager:
         """Create a profile from the current settings. Returns the stored name."""
         name = self._clean_name(name)
         if not name:
-            raise ValueError("Profile name is empty")
+            raise ProfileError("empty", "Profile name is empty")
         if name in self.profiles:
-            raise ValueError(f"Profile '{name}' already exists")
+            raise ProfileError("exists", f"Profile '{name}' already exists")
         self.profiles[name] = self._snapshot()
         self.active = name
         self._save()
@@ -114,7 +125,7 @@ class ProfileManager:
 
     def delete(self, name: str):
         if name == DEFAULT_PROFILE:
-            raise ValueError("The default profile cannot be deleted")
+            raise ProfileError("default_locked", "The default profile cannot be deleted")
         self.profiles.pop(name, None)
         if self.active == name:
             self.apply(DEFAULT_PROFILE)
@@ -124,9 +135,13 @@ class ProfileManager:
     def rename(self, old: str, new: str) -> str:
         new = self._clean_name(new)
         if old == DEFAULT_PROFILE:
-            raise ValueError("The default profile cannot be renamed")
-        if not new or new in self.profiles:
-            raise ValueError("Invalid or duplicate profile name")
+            raise ProfileError("default_locked", "The default profile cannot be renamed")
+        if new == old:
+            return old                                   # nothing to do
+        if not new:
+            raise ProfileError("empty", "Profile name is empty")
+        if new in self.profiles:
+            raise ProfileError("exists", f"Profile '{new}' already exists")
         self.profiles[new] = self.profiles.pop(old)
         if self.active == old:
             self.active = new

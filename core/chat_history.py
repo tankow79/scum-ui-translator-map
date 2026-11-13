@@ -30,6 +30,12 @@ class HistoryEntry:
         return bool(self.translated) and self.translated != self.original
 
 
+def _csv_safe(value) -> str:
+    """Spreadsheet programs run a cell that starts with = + - @ as a formula; chat text comes from other players."""
+    text = str(value)
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
 class ChatHistory:
     """Thread-safe bounded history. ``revision`` increments on every change so UIs can poll cheaply."""
 
@@ -66,6 +72,23 @@ class ChatHistory:
                 except OSError as exc:
                     log.warning("Could not delete history file: %s", exc)
                 self._lines_on_disk = 0
+
+    def set_path(self, path: Optional[str]):
+        """Start or stop writing the history to disk while the app runs (Settings -> keep history between sessions)."""
+        with self._lock:
+            if path == self.path:
+                return
+            self.path = path
+            self._lines_on_disk = 0
+            self._needs_newline = False
+            if path and os.path.exists(path):
+                try:
+                    with open(path, "rb") as f:
+                        data = f.read()
+                    self._lines_on_disk = data.count(b"\n")
+                    self._needs_newline = bool(data) and not data.endswith(b"\n")
+                except OSError:
+                    pass
 
     def set_max_entries(self, value: int):
         value = max(1, int(value))
@@ -120,7 +143,8 @@ class ChatHistory:
                 writer = csv.writer(f)
                 writer.writerow(["timestamp", "type", "sender", "original", "translated", "language"])
                 for e in rows:
-                    writer.writerow([e.timestamp, e.msg_type, e.sender, e.original, e.translated, e.src_lang])
+                    writer.writerow([_csv_safe(c) for c in
+                                     (e.timestamp, e.msg_type, e.sender, e.original, e.translated, e.src_lang)])
         else:
             with open(path, "w", encoding="utf-8") as f:
                 for e in rows:

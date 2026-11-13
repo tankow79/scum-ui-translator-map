@@ -16,6 +16,7 @@ Flow
 """
 
 import hashlib
+import http.client
 import json
 import logging
 import os
@@ -50,6 +51,7 @@ log = logging.getLogger("scum.updater")
 # Downloads are accepted only from GitHub over HTTPS (also after redirects), with sane size limits.
 TRUSTED_DOWNLOAD_HOSTS = ("github.com", "githubusercontent.com")
 MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024
+MAX_API_BYTES = 2 * 1024 * 1024   # the GitHub release description is a few KB; anything bigger is not GitHub
 _SAFE_ASSET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()+-]*\.(exe|zip)$", re.IGNORECASE)
 SELF_TEST_TIMEOUT = 60  # seconds the downloaded build gets to start up and pass its self-test
 PROTECTED_USER_DATA_FILES = ["config.json", "points.json", "profiles.json", "players.json"]
@@ -66,6 +68,7 @@ _ERROR_PATTERNS = (
     (r"GitHub rate limit reached", "update_errors.rate_limit"),
     (r"GitHub responded with HTTP (?P<code>\d+)", "update_errors.http"),
     (r"No connection to GitHub", "update_errors.no_connection"),
+    (r"GitHub sent an unexpected reply", "update_errors.bad_reply"),
     (r"Download cancelled", "update_errors.cancelled"),
     (r"The update address is not a trusted GitHub address", "update_errors.untrusted_url"),
     (r"The update is unexpectedly large", "update_errors.too_large"),
@@ -214,8 +217,17 @@ def _trusted_download_url(asset: Optional[Dict[str, Any]]) -> Optional[str]:
     return url
 
 
+def _safe_int(value: Any) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def parse_release(data: Dict[str, Any], current_version: str = __version__,
                   portable: Optional[bool] = None) -> UpdateInfo:
+    if not isinstance(data, dict):
+        raise ValueError("the release description is not an object")
     tag_name = str(data.get("tag_name", "")).strip()
     version = tag_name.lstrip("vV")
     portable = is_portable_build() if portable is None else portable
@@ -229,7 +241,7 @@ def parse_release(data: Dict[str, Any], current_version: str = __version__,
         html_url=safe_release_page(data.get("html_url")),
         download_url=_trusted_download_url(asset),
         asset_name=asset.get("name") if asset else None,
-        asset_size=int(asset.get("size", 0)) if asset else 0,
+        asset_size=_safe_int(asset.get("size", 0)) if asset else 0,
         is_newer=is_version_newer(current_version, version),
         is_zip=bool(asset and str(asset.get("name", "")).lower().endswith(".zip")),
         sha256=_parse_digest(asset) if asset else None,
@@ -265,11 +277,14 @@ class UpdateChecker(QObject):
     @staticmethod
     def _friendly_error(exc: Exception) -> str:
         if isinstance(exc, urllib.error.HTTPError):
-            if exc.code == 403:
+            if exc.code in (403, 429):
                 return "GitHub rate limit reached. Try again in a few minutes."
             return f"GitHub responded with HTTP {exc.code}."
-        if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
+        if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException)):
             return "No connection to GitHub. Check your internet connection."
+        if isinstance(exc, (ValueError, TypeError, AttributeError, KeyError)):
+            # A captive portal or proxy answered with a web page, or GitHub sent something unexpected
+            return "GitHub sent an unexpected reply. Try again later."
         return str(exc)
 
     def _get_json(self, url: str) -> Any:
@@ -278,7 +293,10 @@ class UpdateChecker(QObject):
             "Accept": "application/vnd.github+json",
         }
         with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=10) as response:
-            return json.loads(response.read().decode("utf-8"))
+            body = response.read(MAX_API_BYTES + 1)
+            if len(body) > MAX_API_BYTES:
+                raise ValueError("GitHub reply is too large")
+            return json.loads(body.decode("utf-8"))
 
     def fetch_latest_release_info(self) -> Optional[UpdateInfo]:
         data = None
@@ -380,7 +398,7 @@ class UpdateDownloader(QObject):
     def _friendly(exc: Exception) -> str:
         if isinstance(exc, PermissionError):
             return "Cannot write the update file (permission denied)."
-        if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
+        if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException)):
             return "Download failed. Check your internet connection and try again."
         return str(exc)
 

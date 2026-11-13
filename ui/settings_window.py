@@ -2,7 +2,7 @@ import logging
 import os
 import webbrowser
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, pyqtSignal
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QStackedWidget,
@@ -22,6 +23,7 @@ from PyQt6.QtWidgets import (
 
 from core.chat_color import parse_nick_list
 from core.config_manager import ConfigManager
+from core.hotkey_manager import VK_NAMES
 from core.i18n import LocalizationManager, tr
 from core.languages import ALL_LANGUAGES
 from core.updater import UpdateChecker, localize_error
@@ -118,6 +120,20 @@ class HotkeyButton(QPushButton):
         self.update_style()
         self.setFocus()
 
+    def event(self, event):
+        # Qt keeps Tab for moving the focus; while a key is being recorded it must reach keyPressEvent
+        if self.is_recording and event.type() == QEvent.Type.KeyPress and event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+            self.keyPressEvent(event)
+            return True
+        return super().event(event)
+
+    def focusOutEvent(self, event):
+        if self.is_recording:                      # clicking elsewhere cancels the recording
+            self.is_recording = False
+            self.setText(self.current_hotkey if self.current_hotkey else tr("settings.clear_bind"))
+            self.update_style()
+        super().focusOutEvent(event)
+
     def keyPressEvent(self, event: QKeyEvent):
         if not self.is_recording:
             super().keyPressEvent(event)
@@ -151,7 +167,11 @@ class HotkeyButton(QPushButton):
         if modifiers & Qt.KeyboardModifier.ShiftModifier:
             parts.append("Shift")
 
-        if Qt.Key.Key_F1 <= key <= Qt.Key.Key_F12:
+        vk = event.nativeVirtualKey()
+        if vk and vk < 256:
+            # The physical key, whatever the keyboard layout is (a Ukrainian layout would otherwise store "Key_1045")
+            parts.append(VK_NAMES.get(vk, f"VK_{vk}"))
+        elif Qt.Key.Key_F1 <= key <= Qt.Key.Key_F12:
             parts.append(f"F{key - Qt.Key.Key_F1 + 1}")
         elif Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
             parts.append(chr(key))
@@ -344,6 +364,11 @@ class SettingsDialog(QDialog):
             self.combo_in_lang.addItem(name, code)
         s.add_field(tr("settings.target_lang"), self.combo_in_lang)
         self.chk_show_orig = s.add_check(WrapCheck(tr("settings.show_original")))
+        self.combo_slang = QComboBox()
+        self.combo_slang.addItem(tr("settings.slang_translate"), "translate")
+        self.combo_slang.addItem(tr("settings.slang_expand"), "expand")
+        self.combo_slang.addItem(tr("settings.slang_keep"), "keep")
+        s.add_field(tr("settings.slang_title"), self.combo_slang, tr("settings.slang_hint"))
         self.chk_ignore_own = s.add_check(WrapCheck(tr("settings.ignore_own")))
         page.add_section(s)
 
@@ -432,8 +457,8 @@ class SettingsDialog(QDialog):
             return button
 
         self.btn_k_chat = hotkey_row(tr("settings.hotkey_chat"), "hotkey_quick_chat", "T")
-        self.btn_k_lock = hotkey_row(tr("settings.hotkey_lock", hotkey="F9"), "hotkey_toggle_lock", "F9")
-        self.btn_k_vis = hotkey_row(tr("settings.hotkey_vis", hotkey="F8"), "hotkey_toggle_visibility", "F8")
+        self.btn_k_lock = hotkey_row(tr("settings.hotkey_lock", hotkey=self.cfg.get("hotkey_toggle_lock", "F9") or "—"), "hotkey_toggle_lock", "F9")
+        self.btn_k_vis = hotkey_row(tr("settings.hotkey_vis", hotkey=self.cfg.get("hotkey_toggle_visibility", "F8") or "—"), "hotkey_toggle_visibility", "F8")
         self.btn_k_map = hotkey_row(tr("settings.hotkey_map"), "hotkey_toggle_map", "Ctrl+M")
 
         btn_reset_all = make_button(tr("settings.hotkey_reset_all"))
@@ -466,6 +491,7 @@ class SettingsDialog(QDialog):
         page = SettingsPage()
         self.tab_profiles = ProfilesTab(self.profiles)
         self.tab_profiles.profile_applied.connect(self._on_profile_applied)
+        self.tab_profiles.profiles_changed.connect(self.settings_changed.emit)
         self.tab_profiles.snapshot_requested.connect(self._snapshot_to_cfg)
         page.add_section(self.tab_profiles)
         page.finish()
@@ -495,6 +521,7 @@ class SettingsDialog(QDialog):
 
         self.combo_in_lang.setCurrentIndex(max(0, self.combo_in_lang.findData(self.cfg.get("target_language", "uk"))))
         self.chk_show_orig.setChecked(self.cfg.get("show_original", True))
+        self.combo_slang.setCurrentIndex(max(0, self.combo_slang.findData(self.cfg.get("slang_mode", "translate"))))
         self.chk_ignore_own.setChecked(self.cfg.get("ignore_own_messages", False))
         blacklist = self.cfg.get("blacklist_nicknames", [])
         self.txt_blacklist.setText(", ".join(blacklist) if isinstance(blacklist, list) else str(blacklist))
@@ -566,7 +593,29 @@ class SettingsDialog(QDialog):
         if file_path:
             self.txt_log_path.setText(file_path)
 
+    def _hotkey_conflict(self):
+        """Names of hotkeys that collide with each other or with the built-in Enter / Esc, else None."""
+        entries = [(tr("settings.hotkey_chat").strip(" :"), self.btn_k_chat.current_hotkey),
+                   (tr("settings.hotkey_lock", hotkey="").strip(" :()"), self.btn_k_lock.current_hotkey),
+                   (tr("settings.hotkey_vis", hotkey="").strip(" :()"), self.btn_k_vis.current_hotkey),
+                   (tr("settings.hotkey_map").strip(" :"), self.btn_k_map.current_hotkey)]
+        seen, clashes = {}, []
+        for name, hotkey in entries:
+            key = (hotkey or "").replace(" ", "").lower()
+            if not key:
+                continue
+            if key in ("enter", "return", "esc", "escape") or key in seen:
+                clashes.append(f"{name} ({hotkey})")
+                if key in seen:
+                    clashes.append(f"{seen[key]} ({hotkey})")
+            seen.setdefault(key, name)
+        return ", ".join(dict.fromkeys(clashes)) or None
+
     def save_settings(self):
+        clash = self._hotkey_conflict()
+        if clash:
+            QMessageBox.warning(self, tr("settings.title"), tr("settings.hotkey_conflict", names=clash))
+            return                                  # stay in the dialog: one of the actions would stop working
         self._write_to_cfg()
         self.settings_changed.emit()
         self.accept()
@@ -602,6 +651,7 @@ class SettingsDialog(QDialog):
 
         self.cfg.set("target_language", self.combo_in_lang.currentData())
         self.cfg.set("show_original", self.chk_show_orig.isChecked())
+        self.cfg.set("slang_mode", self.combo_slang.currentData() or "translate")
         self.cfg.set("ignore_own_messages", self.chk_ignore_own.isChecked())
         self.cfg.set("blacklist_nicknames", [n.strip() for n in self.txt_blacklist.text().split(",") if n.strip()])
         self.cfg.set("squad_nicknames", parse_nick_list(self.txt_squad.text()))

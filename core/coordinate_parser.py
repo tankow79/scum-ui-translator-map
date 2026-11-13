@@ -19,6 +19,7 @@ FL = 1524000.0
 YL = 619199.9375
 AL = 1523999.9375
 NL = 320.0
+_EDGE_EPS = 1e-9   # a point exactly on a grid line (converted back and forth) must stay in its own cell
 
 
 def convert_scum_to_norm(x: float, y: float) -> Tuple[float, float]:
@@ -51,13 +52,13 @@ def get_sector_info(norm_x: float, norm_y: float) -> Tuple[str, str]:
     Returns: (sector, keypad), e.g. ("D3", "k2")
     """
     # 1. Row: D, C, B, A, Z (vertically, north to south)
-    row_idx = int(norm_y * 5.0)
+    row_idx = int(norm_y * 5.0 + _EDGE_EPS)
     row_idx = max(0, min(4, row_idx))
     rows = ["D", "C", "B", "A", "Z"]
     sector_letter = rows[row_idx]
 
     # 2. Column: 4, 3, 2, 1, 0 (horizontally, west to east in SCUM coordinates)
-    col_idx = int(norm_x * 5.0)
+    col_idx = int(norm_x * 5.0 + _EDGE_EPS)
     col_idx = max(0, min(4, col_idx))
     cols = ["4", "3", "2", "1", "0"]
     sector_number = cols[col_idx]
@@ -67,8 +68,8 @@ def get_sector_info(norm_x: float, norm_y: float) -> Tuple[str, str]:
     # 3. Keypad (1..9 inside each 3x3 sector)
     # n_in_sec (0..2), m_in_sec (0..2)
     # (computed from the clamped sector index, so the map's east/south edge stays in the last keypad column/row)
-    sub_col = max(0, min(2, int(norm_x * 15.0) - 3 * col_idx))
-    sub_row = max(0, min(2, int(norm_y * 15.0) - 3 * row_idx))
+    sub_col = max(0, min(2, int(norm_x * 15.0 + _EDGE_EPS) - 3 * col_idx))
+    sub_row = max(0, min(2, int(norm_y * 15.0 + _EDGE_EPS) - 3 * row_idx))
 
     # Standard SCUM numpad:
     # 7 8 9 (top row: sub_row=0)
@@ -206,31 +207,65 @@ class MapPoint:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MapPoint":
-        name = str(data.get("name") or "None")
-        cat = data.get("category")
-        if not cat:
+        """Build a point from stored / imported data. Every field is coerced to its type, so a hand-edited or
+        damaged file can neither crash the map (NaN / infinite coordinates) nor break the lists (non-text ids)."""
+        if not isinstance(data, dict):
+            raise ValueError("a waypoint must be an object")
+
+        def text(key: str, default: str = "") -> str:
+            value = data.get(key, default)
+            return value if isinstance(value, str) else (default if value is None or isinstance(value, (dict, list)) else str(value))
+
+        def number(key: str, default: float) -> float:
+            try:
+                value = float(data.get(key, default))
+            except (TypeError, ValueError, OverflowError):
+                return default
+            return value if math.isfinite(value) else default
+
+        def required(key: str) -> float:
+            try:
+                value = float(data[key])
+            except (KeyError, TypeError, ValueError, OverflowError):
+                raise ValueError(f"waypoint has no usable {key}") from None
+            if not math.isfinite(value):
+                raise ValueError(f"waypoint {key} is not finite")
+            return value
+
+        px, py = required("x"), required("y")
+        # The game position is the truth: the pin position and the sector are always derived from it, so an edited
+        # or minimal (third-party) file can never leave a point at the wrong place or in sector "??".
+        norm_x, norm_y = convert_scum_to_norm(px, py)
+        sector, keypad = get_sector_info(norm_x, norm_y)
+
+        name = text("name") or "None"
+        cat = text("category")
+        if cat not in POINT_CATEGORIES:
             cat = detect_category_from_name(name)
         cat_info = get_category_info(cat)
-        color = data.get("color") or cat_info["default_color"]
+        color = text("color")
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            color = cat_info["default_color"]
+        point_id = text("id") or uuid.uuid4().hex[:8]
+        ids = data.get("player_ids", [])
 
         return cls(
-            id=data.get("id", uuid.uuid4().hex[:8]),
+            id=point_id,
             name=name,
-            date_time=data.get("date_time", ""),
-            raw_coord=data.get("raw_coord", ""),
-            x=float(data.get("x", 0.0)),
-            y=float(data.get("y", 0.0)),
-            z=float(data.get("z", 0.0)),
-            sector=data.get("sector", "??"),
-            keypad=data.get("keypad", "k5"),
-            norm_x=float(data.get("norm_x", 0.0)),
-            norm_y=float(data.get("norm_y", 0.0)),
-            created_timestamp=float(data.get("created_timestamp", time.time())),
+            date_time=text("date_time"),
+            raw_coord=text("raw_coord"),
+            x=px,
+            y=py,
+            z=number("z", 0.0),
+            sector=sector,
+            keypad=keypad,
+            norm_x=norm_x,
+            norm_y=norm_y,
+            created_timestamp=number("created_timestamp", time.time()),
             color=color,
             category=cat,
-            players=data.get("players", ""),
-            player_ids=[str(i) for i in data.get("player_ids", []) if str(i).isdigit()]
-            if isinstance(data.get("player_ids", []), list) else []
+            players=text("players"),
+            player_ids=[str(i) for i in ids if str(i).isdigit()] if isinstance(ids, list) else []
         )
 
 
@@ -247,6 +282,7 @@ def extract_point_name(text: str, coord_match: re.Match) -> str:
     label = text[:start] + " " + text[end:]
     # Strip quotes, brackets, colons and extra whitespace
     label = label.strip("()[]{} \t\r\n:;,-\"\'")
+    label = " ".join(label.split())   # the cut-out coordinates leave a double space in the middle
     return label if label else "None"
 
 
