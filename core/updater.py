@@ -43,7 +43,7 @@ from core.version import (
 
 log = logging.getLogger("scum.updater")
 
-PROTECTED_USER_DATA_FILES = ["config.json", "points.json", "profiles.json"]
+PROTECTED_USER_DATA_FILES = ["config.json", "points.json", "profiles.json", "players.json"]
 MIN_EXE_SIZE = 1_000_000  # a real build is tens of MB; anything smaller is an error page / truncated file
 
 

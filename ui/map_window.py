@@ -1,13 +1,15 @@
+import html
 import logging
 import math
 import os
 import sys
 from typing import Optional
 
-from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
+    QDesktopServices,
     QFont,
     QFontMetrics,
     QImage,
@@ -43,6 +45,7 @@ from core.coordinate_parser import (
     get_sector_info,
 )
 from core.i18n import tr
+from core.players import steam_profile_url
 from core.points_manager import PointsManager
 from ui.color_picker import open_safe_color_dialog
 
@@ -77,6 +80,46 @@ class _ElidedLabel(QLabel):
         sh = super().minimumSizeHint()
         sh.setWidth(40)
         return sh
+
+
+class _MarkerCard(QFrame):
+    """Hover card for a base: shows details and clickable Steam profile links.
+
+    A child widget of the map (not a tooltip), so links can be clicked and the game never loses focus.
+    """
+    entered = pyqtSignal()
+    left = pyqtSignal()
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setObjectName("markerCard")
+        self.setStyleSheet(
+            "#markerCard { background-color: #0f172a; border: 1px solid #38bdf8; border-radius: 6px; }"
+            "QLabel { color: #e2e8f0; font-size: 12px; background: transparent; }"
+        )
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(10, 8, 10, 8)
+        self.label = QLabel()
+        self.label.setTextFormat(Qt.TextFormat.RichText)
+        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.label.setOpenExternalLinks(False)
+        self.label.linkActivated.connect(self._open_link)
+        lay.addWidget(self.label)
+        self.hide()
+
+    @staticmethod
+    def _open_link(url: str):
+        # Only links built by this app (Steam profiles) are ever opened
+        if url.startswith("https://steamcommunity.com/profiles/"):
+            QDesktopServices.openUrl(QUrl(url))
+
+    def enterEvent(self, event):  # noqa: N802
+        self.entered.emit()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):  # noqa: N802
+        self.left.emit()
+        super().leaveEvent(event)
 
 
 class MapCanvasWidget(QWidget):
@@ -116,6 +159,16 @@ class MapCanvasWidget(QWidget):
         self.show_grid = self.cfg.get("map_show_grid", True)
         self.show_keypads = self.cfg.get("map_show_keypads", True)
         self.active_point_id: Optional[str] = None
+
+        # Hover card with clickable Steam links (bases with players)
+        self._card = _MarkerCard(self)
+        self._card_point_id: Optional[str] = None
+        self._card_hide_timer = QTimer(self)
+        self._card_hide_timer.setSingleShot(True)
+        self._card_hide_timer.setInterval(350)
+        self._card_hide_timer.timeout.connect(self._hide_card)
+        self._card.entered.connect(self._card_hide_timer.stop)
+        self._card.left.connect(self._card_hide_timer.start)
 
         # Subscribe to point updates
         self.points_mgr.point_added.connect(self._on_point_added)
@@ -310,6 +363,15 @@ class MapCanvasWidget(QWidget):
         if cur_cat == "base":
             act_players = menu.addAction(tr("map_window.menu_base_players"))
             act_players.triggered.connect(lambda: self._edit_base_players(point))
+            linked = [(n, s) for n, s in self.points_mgr.describe_players(point) if s]
+            if linked:
+                steam_menu = menu.addMenu(tr("map_window.menu_steam_profiles"))
+                steam_menu.setStyleSheet(menu.styleSheet())
+                for nick, sid in linked:
+                    act = steam_menu.addAction(nick.replace("&", "&&"))
+                    act.triggered.connect(
+                        lambda checked=False, s=sid: QDesktopServices.openUrl(QUrl(steam_profile_url(s)))
+                    )
 
         # 3. Rename the point
         act_rename = menu.addAction(tr("map_window.menu_rename"))
@@ -450,13 +512,21 @@ class MapCanvasWidget(QWidget):
                     lines.append(tr("map_window.tip_time", time=hovered.date_time))
                     lines.append(f"🌐 X={hovered.x:.1f} Y={hovered.y:.1f} Z={hovered.z:.1f}")
 
-                    QToolTip.showText(
-                        event.globalPosition().toPoint(),
-                        "\n".join(lines),
-                        self
-                    )
+                    if cur_cat == "base" and hovered.player_ids:
+                        QToolTip.hideText()
+                        self._card_hide_timer.stop()
+                        self._show_card(hovered, lines, event.pos())
+                    else:
+                        self._hide_card()
+                        QToolTip.showText(
+                            event.globalPosition().toPoint(),
+                            "\n".join(lines),
+                            self
+                        )
                 else:
                     self.setCursor(Qt.CursorShape.CrossCursor)
+                    if self._card.isVisible() and not self._card_hide_timer.isActive():
+                        self._card_hide_timer.start()
             else:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
 
@@ -467,6 +537,46 @@ class MapCanvasWidget(QWidget):
             self._dragging = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
             event.accept()
+
+    def _hide_card(self):
+        self._card.hide()
+        self._card_point_id = None
+
+    def _show_card(self, point: MapPoint, lines: list, cursor_pos: QPoint):
+        """Show (or keep) the hover card for a base; links open the players' Steam profiles."""
+        if self._card_point_id == point.id and self._card.isVisible():
+            return
+        esc = html.escape
+        parts = []
+        for label, sid in self.points_mgr.describe_players(point):
+            if sid:
+                parts.append(f'<a style="color:#38bdf8" href="{steam_profile_url(sid)}">{esc(label)}</a>')
+            else:
+                parts.append(esc(label))
+        rows = [
+            esc(lines[0]),
+            esc(lines[1]),
+            esc(tr("map_window.card_players")) + " " + ", ".join(parts),
+            esc(lines[-3]),
+            esc(lines[-2]),
+            f'<span style="color:#94a3b8">{esc(tr("map_window.card_hint"))}</span>',
+        ]
+        self._card.label.setText("<br>".join(rows))
+        self._card.adjustSize()
+        # Overlap the cursor slightly so the mouse can move into the card without leaving the marker
+        x = min(cursor_pos.x() - 6, max(0, self.width() - self._card.width() - 4))
+        y = cursor_pos.y() + 8
+        if y + self._card.height() > self.height():
+            y = max(0, cursor_pos.y() - self._card.height() + 6)
+        self._card.move(max(0, x), y)
+        self._card.raise_()
+        self._card.show()
+        self._card_point_id = point.id
+
+    def leaveEvent(self, event):  # noqa: N802
+        if self._card.isVisible() and not self._card.underMouse():
+            self._card_hide_timer.start()
+        super().leaveEvent(event)
 
     def _find_marker_at(self, pos: QPoint) -> Optional[MapPoint]:
         cur_img = self.map_images.get(self.current_variant)

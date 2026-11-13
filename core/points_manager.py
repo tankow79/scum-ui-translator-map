@@ -4,12 +4,13 @@ import os
 import shutil
 import time
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from core.config_manager import get_portable_config_path
 from core.coordinate_parser import POINT_CATEGORIES, MapPoint, detect_category_from_name
+from core.players import PlayerRegistry, parse_steam_ref, split_players
 
 log = logging.getLogger("scum.points")
 
@@ -38,11 +39,14 @@ class PointsManager(QObject):
     points_cleared = pyqtSignal()
     points_reloaded = pyqtSignal()        # whole list replaced (import)
 
-    def __init__(self, file_path: Optional[str] = None):
+    def __init__(self, file_path: Optional[str] = None, registry: Optional[PlayerRegistry] = None):
         super().__init__()
         if file_path is None:
             file_path = get_portable_config_path("points.json")
         self.file_path = file_path
+        self.registry = registry
+        if registry is not None:
+            registry.player_changed.connect(self.apply_player_update)
         self._points: List[MapPoint] = []
         self.load()
 
@@ -190,14 +194,84 @@ class PointsManager(QObject):
         return False
 
     def update_point_players(self, point_id: str, new_players: str) -> bool:
-        clean_players = new_players.strip()
+        """Set a base's players from free text.
+
+        Each comma-separated entry may be a nickname, a SteamID64 or a steamcommunity.com/profiles
+        link. IDs (and nicknames already known to the registry) are linked to the base, so later
+        nickname changes are applied automatically.
+        """
         for pt in self._points:
             if pt.id == point_id:
-                pt.players = clean_players
+                pt.players, pt.player_ids = self._resolve_players(new_players)
                 self.save()
                 self.point_updated.emit(pt)
                 return True
         return False
+
+    def _resolve_players(self, text: str):
+        tokens: List[str] = []
+        ids: List[str] = []
+        for raw in split_players(text):
+            sid = parse_steam_ref(raw)
+            if sid is None and self.registry is not None:
+                sid = self.registry.find_by_nick(raw)
+            if sid is None:
+                tokens.append(raw)
+                continue
+            if sid in ids:
+                continue
+            ids.append(sid)
+            known = self.registry.nick_of(sid) if self.registry is not None else None
+            tokens.append(known or sid)
+        return ", ".join(tokens), ids
+
+    def apply_player_update(self, steam_id: str, old_name: str, new_nick: str, is_new: bool = False):
+        """Follow a player's rename on every linked base (slot for ``PlayerRegistry.player_changed``).
+
+        ``old_name`` is the previous nickname, or the SteamID while the nickname was still unknown.
+        A newly seen nickname also links bases whose free-text players already contain it.
+        """
+        changed: List[MapPoint] = []
+        for pt in self._points:
+            tokens = split_players(pt.players)
+            linked = steam_id in pt.player_ids
+            if not linked and is_new:
+                if any(t.casefold() == new_nick.casefold() for t in tokens):
+                    pt.player_ids.append(steam_id)
+                    linked = True
+                    changed.append(pt)
+            if not linked:
+                continue
+            old_keys = {old_name.casefold(), steam_id}
+            new_tokens = [new_nick if t.casefold() in old_keys else t for t in tokens]
+            if new_nick not in new_tokens:
+                new_tokens.append(new_nick)
+            deduped: List[str] = []
+            for t in new_tokens:
+                if t.casefold() not in {d.casefold() for d in deduped}:
+                    deduped.append(t)
+            text = ", ".join(deduped)
+            if text != pt.players:
+                pt.players = text
+                if pt not in changed:
+                    changed.append(pt)
+        if changed:
+            self.save()
+            for pt in changed:
+                self.point_updated.emit(pt)
+
+    def describe_players(self, point: MapPoint) -> List[Tuple[str, Optional[str]]]:
+        """[(label, steam_id or None)] for a base: linked players first, then plain-text names."""
+        result: List[Tuple[str, Optional[str]]] = []
+        seen = set()
+        for sid in point.player_ids:
+            nick = (self.registry.nick_of(sid) if self.registry is not None else None) or sid
+            result.append((nick, sid))
+            seen.update({nick.casefold(), sid})
+        for token in split_players(point.players):
+            if token.casefold() not in seen:
+                result.append((token, None))
+        return result
 
     def update_point_color(self, point_id: str, new_color: str) -> bool:
         clean_color = new_color.strip() if new_color.strip() else "#38bdf8"

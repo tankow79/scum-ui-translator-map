@@ -35,6 +35,7 @@ Desktop.ini
 config.json
 points.json
 profiles.json
+players.json
 *.bak
 .update_backup/
 _apply_update.bat

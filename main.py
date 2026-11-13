@@ -18,6 +18,7 @@ from core.log_parser import ScumLogParser
 from core.logging_setup import setup_logging
 from core.message_filter import ChatFilter
 from core.paths import get_user_data_dir
+from core.players import PlayerRegistry
 from core.points_manager import PointsManager
 from core.profiles import ProfileManager
 from core.translator import GoogleTranslatorEngine
@@ -136,7 +137,8 @@ def main():
     is_overlay_enabled_by_user = cfg.get("overlay_enabled", True)
 
     # Interactive map and saved waypoints module
-    points_mgr = PointsManager()
+    player_registry = PlayerRegistry()
+    points_mgr = PointsManager(registry=player_registry)
     map_win = MapWindow(cfg, points_mgr)
     points_win = PointsWindow(cfg, points_mgr)
 
@@ -431,7 +433,7 @@ def main():
         controller.raw_message_received.emit(time_str, sender, msg, msg_type)
 
     log.info("Monitoring SCUM log: %s", resolved_log_path)
-    log_parser = ScumLogParser(resolved_log_path, on_new_log_message)
+    log_parser = ScumLogParser(resolved_log_path, on_new_log_message, player_registry.observe)
     log_parser.start()
 
     # System tray

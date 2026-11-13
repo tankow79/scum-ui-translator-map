@@ -1,8 +1,8 @@
 import re
 import time
 import uuid
-from dataclasses import asdict, dataclass
-from typing import Any, Dict, Optional, Tuple
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 # Regex for finding SCUM coordinates in text
 # Example: {X=174468.797 Y=345933.000 Z=34103.105|P=342.318665 Y=117.616730 R=0.000000}
@@ -188,6 +188,7 @@ class MapPoint:
     color: str = "#38bdf8"
     category: str = "default"
     players: str = ""
+    player_ids: List[str] = field(default_factory=list)
 
     def full_sector_name(self) -> str:
         return f"{self.sector} ({self.keypad})"
@@ -219,7 +220,9 @@ class MapPoint:
             created_timestamp=float(data.get("created_timestamp", time.time())),
             color=color,
             category=cat,
-            players=data.get("players", "")
+            players=data.get("players", ""),
+            player_ids=[str(i) for i in data.get("player_ids", []) if str(i).isdigit()]
+            if isinstance(data.get("player_ids", []), list) else []
         )
 
 

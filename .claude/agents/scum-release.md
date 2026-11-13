@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit
 
 Release checklist:
 1. Versions agree: `core/version.py`, `version_info.txt`, `pyproject.toml`, newest `CHANGELOG.md` entry.
-2. `python -m ruff check .` and `python -m pytest` pass.
+2. `python -m ruff check .` passes and `python -m pytest` passes BOTH normally and with `QT_QPA_PLATFORM=offscreen` (the way GitHub CI runs it).
 3. Build: `python -m PyInstaller --noconfirm SCUM_Chat_Translator.spec` and the `_Portable` spec; check `dist/*.exe` start.
 4. Print the manual steps for the user: tag `vX.Y.Z`, push, confirm the published release has the `.exe` assets are attached
    (the in-app updater installs the `.exe` asset of the latest release and matches Portable by name).
