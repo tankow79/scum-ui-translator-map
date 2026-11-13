@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import threading
 import time
 from typing import Optional
 
@@ -206,7 +207,7 @@ def main():
     controller.hotkey_toggle_map.connect(toggle_map_and_points)
     overlay.open_map_requested.connect(toggle_map_and_points)
 
-    settings_dialog = SettingsDialog(cfg, profiles=profiles)
+    settings_dialog = SettingsDialog(cfg, profiles=profiles, players=player_registry)
 
     # UI signals
     controller.translated_ready.connect(overlay.add_message)
@@ -390,6 +391,7 @@ def main():
 
         if log_parser is not None:
             log_parser.set_log_path(cfg.get_resolved_log_path())
+        apply_player_collection()
 
         enable_chat = cfg.get("enable_chat_translator", True)
         if not enable_chat:
@@ -435,6 +437,24 @@ def main():
     log.info("Monitoring SCUM log: %s", resolved_log_path)
     log_parser = ScumLogParser(resolved_log_path, on_new_log_message, player_registry.observe)
     log_parser.start()
+
+    # Collecting SteamIDs is optional (Settings -> Players). When on, every existing log (old ones
+    # too) is read to learn nickname <-> SteamID pairs; when off, nothing is read or stored.
+    def apply_player_collection():
+        enabled = bool(cfg.get("collect_steam_ids", True))
+        was_enabled = player_registry.enabled
+        player_registry.enabled = enabled
+        if enabled and not was_enabled:
+            threading.Thread(
+                target=player_registry.rescan_all, args=(cfg.get_resolved_log_path(),),
+                daemon=True, name="player-log-rescan",
+            ).start()
+
+    player_registry.enabled = bool(cfg.get("collect_steam_ids", True))
+    if player_registry.enabled:
+        threading.Thread(
+            target=player_registry.scan_logs, args=(resolved_log_path,), daemon=True, name="player-log-scan"
+        ).start()
 
     # System tray
     tray = QSystemTrayIcon(QIcon(create_tray_icon_pixmap(has_update=False)), app)

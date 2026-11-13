@@ -5,6 +5,7 @@ import time
 from typing import Callable, Optional
 
 from core.chat_color import log_time_to_local
+from core.players import parse_user_line
 
 
 class ScumLogParser:
@@ -15,22 +16,16 @@ class ScumLogParser:
         self,
         log_path: str,
         on_message: Callable[[str, str, str, str], None],
-        on_player: Optional[Callable[[str, str, str], None]] = None,
+        on_player: Optional[Callable[[str, str, str, float], None]] = None,
     ):
         """
         :param log_path: Full path to SCUM.log
         :param on_message: Callback(timestamp_str, sender, message, msg_type)
-        :param on_player: Callback(nickname, steam_id, hash) for ``Message from user:`` lines
+        :param on_player: Callback(steam_id, nickname, hash, epoch_utc) for ``Message from user:`` lines
         """
         self.log_path = log_path
         self.on_message = on_message
         self.on_player = on_player
-        # "Message from user: Nick (76561199117414081) (hash: 46E0...)" precedes each chat line
-        self._pattern_user = re.compile(
-            r'LogSCUM:\s*Message from user:\s*(?P<nick>.+?)\s*\((?P<sid>\d{17})\)\s*\(hash:\s*(?P<hash>[0-9A-Fa-f]+)\)'
-        )
-        self._running = False
-        self._thread: Optional[threading.Thread] = None
 
         # Regexes for SCUM chat messages
         # 1. Regular player messages
@@ -117,9 +112,9 @@ class ScumLogParser:
             return
 
         if self.on_player is not None:
-            um = self._pattern_user.search(line)
-            if um:
-                self.on_player(um.group("nick").strip(), um.group("sid"), um.group("hash").upper())
+            parsed = parse_user_line(line)
+            if parsed:
+                self.on_player(*parsed)
                 return
 
         msg_type = "player"

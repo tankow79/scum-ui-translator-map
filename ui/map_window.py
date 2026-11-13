@@ -1,11 +1,11 @@
-import html
 import logging
 import math
 import os
 import sys
+from datetime import datetime
 from typing import Optional
 
-from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QEvent, QPoint, QPointF, QRectF, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSizeGrip,
     QSizePolicy,
+    QToolButton,
     QToolTip,
     QVBoxLayout,
     QWidget,
@@ -82,10 +83,26 @@ class _ElidedLabel(QLabel):
         return sh
 
 
-class _MarkerCard(QFrame):
-    """Hover card for a base: shows details and clickable Steam profile links.
+_CARD_QSS = (
+    "QFrame#markerCard, QFrame#markerFlyout { background-color: #0f172a; border: 1px solid #38bdf8; border-radius: 6px; }"
+    "QLabel { color: #e2e8f0; font-size: 12px; background: transparent; border: none; }"
+    "QToolButton { color: #e2e8f0; font-size: 12px; background: transparent; border: none; padding: 1px 2px; }"
+    "QToolButton:hover { background-color: #1e293b; border-radius: 4px; }"
+    "QToolButton#steamLink { color: #38bdf8; font-size: 12px; padding: 1px 0px; }"
+)
 
-    A child widget of the map (not a tooltip), so links can be clicked and the game never loses focus.
+
+def _fmt_date(ts: float) -> str:
+    return datetime.fromtimestamp(ts).strftime("%d/%m/%Y %H:%M") if ts else "—"
+
+
+class _MarkerCard(QFrame):
+    """Hover card for a base. Child widget of the map (not a tooltip) so it can be clicked and the
+    game never loses focus.
+
+    Every linked player gets a 🔗 button that opens the Steam profile. A player who renamed shows
+    the nickname as a drop-down (▾); clicking it opens a small flyout to the right with the date of
+    each change and the old nickname.
     """
     entered = pyqtSignal()
     left = pyqtSignal()
@@ -93,25 +110,119 @@ class _MarkerCard(QFrame):
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setObjectName("markerCard")
-        self.setStyleSheet(
-            "#markerCard { background-color: #0f172a; border: 1px solid #38bdf8; border-radius: 6px; }"
-            "QLabel { color: #e2e8f0; font-size: 12px; background: transparent; }"
-        )
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(10, 8, 10, 8)
-        self.label = QLabel()
-        self.label.setTextFormat(Qt.TextFormat.RichText)
-        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
-        self.label.setOpenExternalLinks(False)
-        self.label.linkActivated.connect(self._open_link)
-        lay.addWidget(self.label)
+        self.setStyleSheet(_CARD_QSS)
+        self._lay = QVBoxLayout(self)
+        self._lay.setContentsMargins(10, 8, 10, 8)
+        self._lay.setSpacing(2)
+        self._flyout = QFrame(parent)
+        self._flyout.setObjectName("markerFlyout")
+        self._flyout.setStyleSheet(_CARD_QSS)
+        self._fly_lay = QVBoxLayout(self._flyout)
+        self._fly_lay.setContentsMargins(10, 8, 10, 8)
+        self._fly_lay.setSpacing(2)
+        self._flyout.hide()
+        self._flyout.installEventFilter(self)
+        self._open_row: Optional[QWidget] = None
         self.hide()
 
+    def is_under_mouse(self) -> bool:
+        return self.underMouse() or self._flyout.underMouse()
+
+    def eventFilter(self, obj, event):  # noqa: N802
+        if obj is self._flyout:
+            if event.type() == QEvent.Type.Enter:
+                self.entered.emit()
+            elif event.type() == QEvent.Type.Leave:
+                self.left.emit()
+        return super().eventFilter(obj, event)
+
     @staticmethod
-    def _open_link(url: str):
-        # Only links built by this app (Steam profiles) are ever opened
-        if url.startswith("https://steamcommunity.com/profiles/"):
-            QDesktopServices.openUrl(QUrl(url))
+    def _clear(layout):
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+    def set_content(self, head: list, players: list, foot: list):
+        """players: [(label, steam_id or None, [(old_nick, changed_at), ...])]"""
+        self._flyout.hide()
+        self._clear(self._lay)
+        for text in head:
+            self._lay.addWidget(self._label(text))
+        if players:
+            self._lay.addWidget(self._label(tr("map_window.card_players")))
+        for label, sid, history in players:
+            self._lay.addWidget(self._player_row(label, sid, history))
+        for text in foot:
+            self._lay.addWidget(self._label(text))
+        self.adjustSize()
+
+    @staticmethod
+    def _label(text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setTextFormat(Qt.TextFormat.PlainText)
+        return lbl
+
+    def _player_row(self, label: str, sid: Optional[str], history: list) -> QWidget:
+        row = QWidget()
+        hl = QHBoxLayout(row)
+        hl.setContentsMargins(4, 0, 0, 0)
+        hl.setSpacing(0)
+        if sid:
+            link = QToolButton()
+            link.setObjectName("steamLink")
+            link.setText("🔗")
+            link.setFixedWidth(18)
+            link.setCursor(Qt.CursorShape.PointingHandCursor)
+            link.setToolTip(tr("map_window.open_steam"))
+            link.clicked.connect(lambda _=False, s=sid: QDesktopServices.openUrl(QUrl(steam_profile_url(s))))
+            hl.addWidget(link)
+        else:
+            spacer = QWidget()
+            spacer.setFixedWidth(18)
+            hl.addWidget(spacer)
+        if history:
+            name = QToolButton()
+            name.setText(f"{label} ▾")
+            name.setCursor(Qt.CursorShape.PointingHandCursor)
+            name.setToolTip(tr("map_window.old_nicks"))
+            name.clicked.connect(lambda _=False, r=row, h=history: self._toggle_flyout(r, h))
+            hl.addWidget(name)
+        else:
+            plain = self._label(label)
+            plain.setContentsMargins(2, 0, 2, 0)  # same inset as the drop-down button text
+            hl.addWidget(plain)
+        hl.addStretch(1)
+        return row
+
+    def _toggle_flyout(self, row: QWidget, history: list):
+        if self._flyout.isVisible() and self._open_row is row:
+            self._flyout.hide()
+            return
+        self._clear(self._fly_lay)
+        self._fly_lay.addWidget(self._label(tr("map_window.old_nicks")))
+        for old_nick, changed_at in history:
+            self._fly_lay.addWidget(self._label(f"{_fmt_date(changed_at)}  —  {old_nick}"))
+        self._flyout.adjustSize()
+        parent = self.parentWidget()
+        top = row.mapTo(parent, QPoint(0, 0)).y()
+        fw = self._flyout.width()
+        x = self.x() + self.width() + 4
+        y = max(2, min(top, parent.height() - self._flyout.height() - 2))
+        if x + fw > parent.width():
+            if self.x() - fw - 4 >= 2:
+                x = self.x() - fw - 4
+            else:  # no room at either side: open below the card so no name is covered
+                x = max(2, min(self.x(), parent.width() - fw - 2))
+                y = max(2, min(self.y() + self.height() + 4, parent.height() - self._flyout.height() - 2))
+        self._flyout.move(x, y)
+        self._flyout.raise_()
+        self._flyout.show()
+        self._open_row = row
+
+    def hideEvent(self, event):  # noqa: N802
+        self._flyout.hide()
+        super().hideEvent(event)
 
     def enterEvent(self, event):  # noqa: N802
         self.entered.emit()
@@ -165,7 +276,7 @@ class MapCanvasWidget(QWidget):
         self._card_point_id: Optional[str] = None
         self._card_hide_timer = QTimer(self)
         self._card_hide_timer.setSingleShot(True)
-        self._card_hide_timer.setInterval(350)
+        self._card_hide_timer.setInterval(600)
         self._card_hide_timer.timeout.connect(self._hide_card)
         self._card.entered.connect(self._card_hide_timer.stop)
         self._card.left.connect(self._card_hide_timer.start)
@@ -539,42 +650,33 @@ class MapCanvasWidget(QWidget):
             event.accept()
 
     def _hide_card(self):
+        if self._card.isVisible() and self._card.is_under_mouse():
+            return  # the user is reading/clicking the card
         self._card.hide()
         self._card_point_id = None
 
     def _show_card(self, point: MapPoint, lines: list, cursor_pos: QPoint):
-        """Show (or keep) the hover card for a base; links open the players' Steam profiles."""
+        """Show (or keep) the hover card for a base."""
         if self._card_point_id == point.id and self._card.isVisible():
             return
-        esc = html.escape
-        parts = []
+        players = []
         for label, sid in self.points_mgr.describe_players(point):
-            if sid:
-                parts.append(f'<a style="color:#38bdf8" href="{steam_profile_url(sid)}">{esc(label)}</a>')
-            else:
-                parts.append(esc(label))
-        rows = [
-            esc(lines[0]),
-            esc(lines[1]),
-            esc(tr("map_window.card_players")) + " " + ", ".join(parts),
-            esc(lines[-3]),
-            esc(lines[-2]),
-            f'<span style="color:#94a3b8">{esc(tr("map_window.card_hint"))}</span>',
-        ]
-        self._card.label.setText("<br>".join(rows))
-        self._card.adjustSize()
-        # Overlap the cursor slightly so the mouse can move into the card without leaving the marker
-        x = min(cursor_pos.x() - 6, max(0, self.width() - self._card.width() - 4))
-        y = cursor_pos.y() + 8
-        if y + self._card.height() > self.height():
-            y = max(0, cursor_pos.y() - self._card.height() + 6)
-        self._card.move(max(0, x), y)
+            history = [(h["nick"], h["changed_at"]) for h in self.points_mgr.player_history(sid)] if sid else []
+            players.append((label, sid, history))
+        self._card.set_content(lines[:2], players, lines[-3:-1])
+        # Place the card so the cursor lands inside it: the user can then click a nickname without
+        # having to cross a gap that would make the card disappear.
+        x = cursor_pos.x() - 14
+        y = cursor_pos.y() - 10
+        x = max(2, min(x, self.width() - self._card.width() - 2))
+        y = max(2, min(y, self.height() - self._card.height() - 2))
+        self._card.move(x, y)
         self._card.raise_()
         self._card.show()
         self._card_point_id = point.id
 
     def leaveEvent(self, event):  # noqa: N802
-        if self._card.isVisible() and not self._card.underMouse():
+        if self._card.isVisible() and not self._card.is_under_mouse():
             self._card_hide_timer.start()
         super().leaveEvent(event)
 

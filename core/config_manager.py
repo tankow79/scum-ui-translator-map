@@ -31,6 +31,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "ignore_own_messages": False,
     "own_nickname": "",
     "blacklist_nicknames": [],  # Players whose messages are not translated (kept in the original language)
+    "collect_steam_ids": True,  # Read SteamIDs/nicknames from the game logs (Settings -> Players)
     "squad_nicknames": [],  # Squadmates shown in green in the overlay chat
     "hotkey_toggle_lock": "F9",
     "hotkey_toggle_visibility": "F8",

@@ -27,6 +27,7 @@ from core.languages import ALL_LANGUAGES
 from core.updater import UpdateChecker
 from core.version import GITHUB_REPO_URL, __version__
 from ui.flow_layout import button_row
+from ui.players_page import PlayersPage
 from ui.settings_extra_tabs import (
     AutoDetectSection,
     HistorySection,
@@ -198,10 +199,11 @@ class SettingsDialog(QDialog):
 
     NAV_MAX_WIDTH = 230
 
-    def __init__(self, config_manager: ConfigManager, parent=None, profiles=None):
+    def __init__(self, config_manager: ConfigManager, parent=None, profiles=None, players=None):
         super().__init__(parent)
         self.cfg = config_manager
         self.profiles = profiles
+        self.players = players
         LocalizationManager.get_instance().set_locale(self.cfg.get("ui_language", "en"))
         self.setWindowTitle(tr("settings.title"))
         self.setMinimumSize(660, 460)
@@ -233,6 +235,7 @@ class SettingsDialog(QDialog):
             (tr("settings.nav_chat"), self._build_chat_page()),
             (tr("settings.nav_appearance"), self._build_appearance_page()),
             (tr("settings.nav_hotkeys"), self._build_hotkeys_page()),
+            (tr("settings.nav_players"), self._build_players_page()),
             (tr("settings.nav_profiles"), self._build_profiles_page()),
         ]
         for title, page in pages:
@@ -441,6 +444,17 @@ class SettingsDialog(QDialog):
         page.finish()
         return page
 
+    def _build_players_page(self) -> SettingsPage:
+        page = SettingsPage()
+        s = Section(tr("players.collect_title"))
+        self.chk_collect_ids = s.add_check(WrapCheck(tr("players.collect_check")))
+        s.add_widget(muted_label(tr("players.collect_hint")))
+        page.add_section(s)
+        self.tab_players = PlayersPage(self.players)
+        page.add_section(self.tab_players)
+        page.finish()
+        return page
+
     def _build_profiles_page(self) -> SettingsPage:
         page = SettingsPage()
         self.tab_profiles = ProfilesTab(self.profiles)
@@ -477,6 +491,7 @@ class SettingsDialog(QDialog):
         self.chk_ignore_own.setChecked(self.cfg.get("ignore_own_messages", False))
         blacklist = self.cfg.get("blacklist_nicknames", [])
         self.txt_blacklist.setText(", ".join(blacklist) if isinstance(blacklist, list) else str(blacklist))
+        self.chk_collect_ids.setChecked(bool(self.cfg.get("collect_steam_ids", True)))
         self.txt_squad.setText(", ".join(parse_nick_list(self.cfg.get("squad_nicknames", []))))
 
         self.chk_font_bold.setChecked(self.cfg.get("font_bold", False))
@@ -574,6 +589,7 @@ class SettingsDialog(QDialog):
         self.cfg.set("ignore_own_messages", self.chk_ignore_own.isChecked())
         self.cfg.set("blacklist_nicknames", [n.strip() for n in self.txt_blacklist.text().split(",") if n.strip()])
         self.cfg.set("squad_nicknames", parse_nick_list(self.txt_squad.text()))
+        self.cfg.set("collect_steam_ids", self.chk_collect_ids.isChecked())
 
         self.cfg.set("font_bold", self.chk_font_bold.isChecked())
         self.cfg.set("text_outline", self.chk_text_outline.isChecked())

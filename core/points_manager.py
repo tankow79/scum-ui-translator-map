@@ -10,7 +10,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from core.config_manager import get_portable_config_path
 from core.coordinate_parser import POINT_CATEGORIES, MapPoint, detect_category_from_name
-from core.players import PlayerRegistry, parse_steam_ref, split_players
+from core.players import PlayerRegistry, split_players
 
 log = logging.getLogger("scum.points")
 
@@ -47,6 +47,9 @@ class PointsManager(QObject):
         self.registry = registry
         if registry is not None:
             registry.player_changed.connect(self.apply_player_update)
+            registry.scan_finished.connect(lambda _n: self.relink_players())
+            registry.player_removed.connect(self._unlink_player)
+            registry.cleared.connect(self._unlink_all_players)
         self._points: List[MapPoint] = []
         self.load()
 
@@ -194,42 +197,81 @@ class PointsManager(QObject):
         return False
 
     def update_point_players(self, point_id: str, new_players: str) -> bool:
-        """Set a base's players from free text.
+        """Set a base's players from free text (nicknames, comma-separated).
 
-        Each comma-separated entry may be a nickname, a SteamID64 or a steamcommunity.com/profiles
-        link. IDs (and nicknames already known to the registry) are linked to the base, so later
-        nickname changes are applied automatically.
+        Nicknames known to the player registry (current or old ones) are linked to that player's
+        SteamID automatically, so later nickname changes are applied to the base without any
+        manual input.
         """
         for pt in self._points:
             if pt.id == point_id:
-                pt.players, pt.player_ids = self._resolve_players(new_players)
+                pt.players, pt.player_ids = self._resolve_players(new_players, pt.player_ids)
                 self.save()
                 self.point_updated.emit(pt)
                 return True
         return False
 
-    def _resolve_players(self, text: str):
+    def _resolve_players(self, text: str, existing_ids: Optional[List[str]] = None):
         tokens: List[str] = []
         ids: List[str] = []
         for raw in split_players(text):
-            sid = parse_steam_ref(raw)
-            if sid is None and self.registry is not None:
-                sid = self.registry.find_by_nick(raw)
+            sid = None
+            if self.registry is not None:
+                # Keep an existing link when the token still names that player (handles shared nicknames)
+                for known in existing_ids or []:
+                    rec = self.registry.get(known)
+                    names = [rec["nick"]] + [h["nick"] for h in rec["previous_nicks"]] if rec else []
+                    if any(n.casefold() == raw.casefold() for n in names):
+                        sid = known
+                        break
+                if sid is None:
+                    sid = self.registry.find_by_nick(raw)
             if sid is None:
                 tokens.append(raw)
                 continue
             if sid in ids:
                 continue
             ids.append(sid)
-            known = self.registry.nick_of(sid) if self.registry is not None else None
-            tokens.append(known or sid)
+            tokens.append(self.registry.nick_of(sid) or raw)
         return ", ".join(tokens), ids
+
+    def relink_players(self):
+        """Re-match every base's nicknames against the registry (after the log scan finishes)."""
+        changed = []
+        for pt in self._points:
+            if not pt.players:
+                continue
+            text, ids = self._resolve_players(pt.players, pt.player_ids)
+            if text != pt.players or ids != pt.player_ids:
+                pt.players, pt.player_ids = text, ids
+                changed.append(pt)
+        if changed:
+            self.save()
+            for pt in changed:
+                self.point_updated.emit(pt)
+
+    def _unlink_player(self, steam_id: str):
+        changed = [pt for pt in self._points if steam_id in pt.player_ids]
+        for pt in changed:
+            pt.player_ids = [i for i in pt.player_ids if i != steam_id]
+        if changed:
+            self.save()
+            for pt in changed:
+                self.point_updated.emit(pt)
+
+    def _unlink_all_players(self):
+        changed = [pt for pt in self._points if pt.player_ids]
+        for pt in changed:
+            pt.player_ids = []
+        if changed:
+            self.save()
+            for pt in changed:
+                self.point_updated.emit(pt)
 
     def apply_player_update(self, steam_id: str, old_name: str, new_nick: str, is_new: bool = False):
         """Follow a player's rename on every linked base (slot for ``PlayerRegistry.player_changed``).
 
-        ``old_name`` is the previous nickname, or the SteamID while the nickname was still unknown.
-        A newly seen nickname also links bases whose free-text players already contain it.
+        ``old_name`` is the previous nickname. A newly seen nickname also links bases whose free-text players already contain it.
         """
         changed: List[MapPoint] = []
         for pt in self._points:
@@ -242,7 +284,7 @@ class PointsManager(QObject):
                     changed.append(pt)
             if not linked:
                 continue
-            old_keys = {old_name.casefold(), steam_id}
+            old_keys = {old_name.casefold()}
             new_tokens = [new_nick if t.casefold() in old_keys else t for t in tokens]
             if new_nick not in new_tokens:
                 new_tokens.append(new_nick)
@@ -260,14 +302,21 @@ class PointsManager(QObject):
             for pt in changed:
                 self.point_updated.emit(pt)
 
+    def player_history(self, steam_id: str) -> List[dict]:
+        """Old nicknames of a player: [{nick, changed_at}], newest first."""
+        rec = self.registry.get(steam_id) if self.registry is not None else None
+        return rec["previous_nicks"] if rec else []
+
     def describe_players(self, point: MapPoint) -> List[Tuple[str, Optional[str]]]:
         """[(label, steam_id or None)] for a base: linked players first, then plain-text names."""
         result: List[Tuple[str, Optional[str]]] = []
         seen = set()
         for sid in point.player_ids:
-            nick = (self.registry.nick_of(sid) if self.registry is not None else None) or sid
+            nick = self.registry.nick_of(sid) if self.registry is not None else None
+            if nick is None:
+                continue
             result.append((nick, sid))
-            seen.update({nick.casefold(), sid})
+            seen.add(nick.casefold())
         for token in split_players(point.players):
             if token.casefold() not in seen:
                 result.append((token, None))
