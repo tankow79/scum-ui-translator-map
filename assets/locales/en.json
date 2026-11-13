@@ -357,6 +357,7 @@
     "open_steam": "Open Steam profile",
     "old_nicks": "Previous nicknames:"
   },
+  "common": {"yes": "Yes", "no": "No", "ok": "OK"},
   "overlay_ui": {
     "swap_languages": "Swap languages",
     "close": "Close"

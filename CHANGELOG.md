@@ -5,6 +5,11 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [2.4.3] - 2026-11-13
+
+### Fixed
+- All confirmation and notice boxes (delete a player, clear history, delete a profile, hotkey conflict, update check, import) now use one tidy dialog: icon on the left, text block beside it, translated Yes/No buttons on the right (they used to show text pushed to the right and English "Yes / No").
+
 ## [2.4.2] - 2026-11-13
 
 ### Fixed

@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -24,6 +23,7 @@ from PyQt6.QtWidgets import (
 
 from core.chat_history import ChatHistory, HistoryEntry
 from core.i18n import tr
+from ui.dialogs import ask, notify
 from ui.theme import DIALOG_QSS
 
 log = logging.getLogger("scum.history_window")
@@ -181,15 +181,12 @@ class HistoryWindow(QWidget):
             path += f".{fmt}"
         try:
             count = self.history.export(path, self._rows, fmt)
-            QMessageBox.information(self, tr("history.title"), tr("history.export_done", count=count, path=path))
+            notify(self, tr("history.title"), tr("history.export_done", count=count, path=path))
         except (OSError, ValueError) as exc:
             log.warning("History export failed: %s", exc)
-            QMessageBox.warning(self, tr("history.title"), tr("history.export_failed", error=str(exc)))
+            notify(self, tr("history.title"), tr("history.export_failed", error=str(exc)), "warning")
 
     def _clear(self):
-        answer = QMessageBox.question(self, tr("history.title"), tr("history.clear_confirm"),
-                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                      QMessageBox.StandardButton.No)
-        if answer == QMessageBox.StandardButton.Yes:
+        if ask(self, tr("history.title"), tr("history.clear_confirm"), danger=True):
             self.history.clear()
             self._reload()

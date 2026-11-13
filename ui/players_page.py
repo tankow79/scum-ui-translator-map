@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -20,6 +19,7 @@ from PyQt6.QtWidgets import (
 
 from core.i18n import tr
 from core.players import PlayerRegistry, steam_profile_url
+from ui.dialogs import ask
 from ui.flow_layout import button_row
 from ui.settings_widgets import Section, make_button, muted_label
 
@@ -168,12 +168,7 @@ class PlayersPage(QWidget):
 
     # ── actions (always confirmed) ───────────────────────────────────
     def _confirm(self, text: str) -> bool:
-        answer = QMessageBox.question(
-            self, tr("players.title"), text,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return answer == QMessageBox.StandardButton.Yes
+        return ask(self, tr("players.title"), text, danger=True)
 
     def _delete_old_nick(self):
         sel = self._selected()

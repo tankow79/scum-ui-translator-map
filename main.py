@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
     QMenu,
-    QMessageBox,
     QSystemTrayIcon,
 )
 
@@ -35,6 +34,7 @@ from core.translator import GoogleTranslatorEngine
 from core.updater import UpdateChecker, UpdateInfo, UpdateInstaller, localize_error
 from core.version import __version__
 from ui.color_picker import color_dialog_active
+from ui.dialogs import notify
 from ui.history_window import HistoryWindow
 from ui.map_window import MapWindow
 from ui.overlay import ChatOverlay
@@ -677,20 +677,11 @@ def _run():
             dlg.exec()
 
         def on_none(curr_ver):
-            QMessageBox.information(
-                None,
-                tr("update.dialog_title"),
-                tr("update.up_to_date", version=curr_ver),
-                QMessageBox.StandardButton.Ok
-            )
+            notify(None, tr("update.dialog_title"), tr("update.up_to_date", version=curr_ver))
 
         def on_err(err_text):
-            QMessageBox.warning(
-                None,
-                tr("update.check_failed_title"),
-                tr("update.check_failed", error=localize_error(err_text)),
-                QMessageBox.StandardButton.Ok
-            )
+            notify(None, tr("update.check_failed_title"),
+                   tr("update.check_failed", error=localize_error(err_text)), "warning")
 
         interactive_checker.update_available.connect(on_avail)
         interactive_checker.no_update_found.connect(on_none)
