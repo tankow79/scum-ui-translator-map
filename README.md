@@ -18,7 +18,7 @@
 
 ---
 
-## 🚀 Quick start (1 minute)
+## 🚀 Quick start
 
 1. Open the **[latest release](https://github.com/tankow79/scum-ui-translator-map/releases/latest)** and download **`SCUM_Chat_Translator.exe`** (or the `.zip` package, which contains the same exe plus instructions).
 2. Put the file into **any folder you like** (for example `C:\Games\SCUM_Translator\`). Do not run it from inside the zip: extract it first.
