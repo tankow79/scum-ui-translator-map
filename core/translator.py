@@ -23,7 +23,7 @@ class GoogleTranslatorEngine:
         self.target_lang = target_lang
         self.source_lang = source_lang
         self.api_key = api_key
-        self._cache: Dict[str, Tuple[str, str]] = {}  # key -> (translated_text, src_lang)
+        self._cache: Dict[str, Tuple[str, str]] = {}  # key -> (translated_text, src_lang); successes only
         self._lock = threading.Lock()
         self._host_index = 0
         self.session = requests.Session()
@@ -65,15 +65,24 @@ class GoogleTranslatorEngine:
         # If an official API key is set
         if self.api_key:
             res = self._translate_with_api_key(clean_text, target, source)
-            with self._lock:
-                self._cache[cache_key] = res
+            self._cache_put(cache_key, res)
             return res
 
         # Rotation and fault-tolerant translation via Google servers
         res = self._translate_with_fallbacks(clean_text, target, source)
-        with self._lock:
-            self._cache[cache_key] = res
+        self._cache_put(cache_key, res)
         return res
+
+    CACHE_LIMIT = 2000
+
+    def _cache_put(self, key: str, result: Tuple[str, str]):
+        """Remember a translation. Failures ("unknown") are not cached so a network blip is not permanent."""
+        if result[1] == "unknown":
+            return
+        with self._lock:
+            self._cache[key] = result
+            while len(self._cache) > self.CACHE_LIMIT:
+                self._cache.pop(next(iter(self._cache)))
 
     def _translate_with_fallbacks(self, text: str, target: str, source: str) -> Tuple[str, str]:
         # Try the available Google hosts in order

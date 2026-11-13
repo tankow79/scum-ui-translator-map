@@ -12,6 +12,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from core.config_manager import ConfigManager, get_portable_config_path
+from core.fileio import atomic_write_json, quarantine_corrupt
 
 log = logging.getLogger("scum.profiles")
 
@@ -54,21 +55,22 @@ class ProfileManager:
             with open(self.path, encoding="utf-8") as f:
                 data = json.load(f)
             profiles = data.get("profiles", {})
+            if not isinstance(profiles, dict):
+                raise ValueError("'profiles' is not an object")   # keep the file; do not overwrite it with an empty set
             if isinstance(profiles, dict):
                 self.profiles = {str(n): {k: v for k, v in p.items() if k in PROFILE_KEYS}
                                  for n, p in profiles.items() if isinstance(p, dict)}
             active = data.get("active")
             if isinstance(active, str) and active in self.profiles:
                 self.active = active
-        except (OSError, ValueError, AttributeError) as exc:
+        except (OSError, ValueError, AttributeError, TypeError, RecursionError) as exc:
             log.warning("Could not load profiles (%s); starting fresh.", exc)
+            if not isinstance(exc, OSError):
+                quarantine_corrupt(self.path)
 
     def _save(self):
-        tmp = self.path + ".tmp"
         try:
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"active": self.active, "profiles": self.profiles}, f, indent=2, ensure_ascii=False)
-            os.replace(tmp, self.path)
+            atomic_write_json(self.path, {"active": self.active, "profiles": self.profiles})
         except OSError as exc:
             log.error("Could not save profiles: %s", exc)
 

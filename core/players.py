@@ -8,6 +8,7 @@ nickname to a SteamID. The registry is filled automatically: all existing logs a
 import glob
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -18,6 +19,7 @@ from typing import Dict, List, Optional, Tuple
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from core.config_manager import get_portable_config_path
+from core.fileio import atomic_write_json, quarantine_corrupt
 
 log = logging.getLogger("scum.players")
 
@@ -88,18 +90,27 @@ class PlayerRegistry(QObject):
     def _clean_record(rec: dict) -> Optional[dict]:
         if not isinstance(rec, dict) or not rec.get("nick"):
             return None
+        def number(value, default=0.0) -> float:
+            try:
+                result = float(value)
+            except (TypeError, ValueError):
+                return default
+            return result if math.isfinite(result) else default
+
         history = []
-        for item in rec.get("previous_nicks", []):
+        raw_history = rec.get("previous_nicks")
+        for item in raw_history if isinstance(raw_history, list) else []:
             if isinstance(item, str):
                 item = {"nick": item, "changed_at": 0}
             if isinstance(item, dict) and item.get("nick"):
-                history.append({"nick": str(item["nick"]), "changed_at": float(item.get("changed_at") or 0)})
-        rec = dict(rec)
-        rec["previous_nicks"] = history
-        rec.setdefault("hash", "")
-        rec.setdefault("first_seen", 0)
-        rec.setdefault("last_seen", rec.get("first_seen", 0))
-        return rec
+                history.append({"nick": str(item["nick"]), "changed_at": number(item.get("changed_at"))})
+        return {
+            "nick": str(rec["nick"]),
+            "hash": str(rec.get("hash") or ""),
+            "first_seen": number(rec.get("first_seen")),
+            "last_seen": number(rec.get("last_seen"), number(rec.get("first_seen"))),
+            "previous_nicks": history,
+        }
 
     def load(self):
         with self._lock:
@@ -111,6 +122,7 @@ class PlayerRegistry(QObject):
                     data = json.load(f)
             except Exception as e:
                 log.error("Failed to load %s: %s", self.file_path, e)
+                quarantine_corrupt(self.file_path)
                 return
             if not isinstance(data, dict):
                 return
@@ -125,15 +137,11 @@ class PlayerRegistry(QObject):
 
     def save(self):
         with self._lock:
-            tmp_path = self.file_path + ".tmp"
             try:
-                parent = os.path.dirname(self.file_path)
-                if parent and not os.path.exists(parent):
-                    os.makedirs(parent, exist_ok=True)
-                payload = {"version": FORMAT_VERSION, "players": self._players, "scanned_logs": self._scanned}
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(payload, f, indent=2, ensure_ascii=False)
-                os.replace(tmp_path, self.file_path)
+                atomic_write_json(
+                    self.file_path,
+                    {"version": FORMAT_VERSION, "players": self._players, "scanned_logs": self._scanned},
+                )
             except OSError as e:
                 log.error("Could not save %s: %s", self.file_path, e)
 
@@ -202,6 +210,11 @@ class PlayerRegistry(QObject):
                 with open(path, "rb") as f:
                     f.seek(start)
                     chunk = f.read(size - start)
+                # A line still being written must not be consumed half-way: stop at the last newline
+                complete = chunk.rfind(b"\n") + 1
+                chunk, size = chunk[:complete], start + complete
+                if not chunk:
+                    continue
                 for raw in chunk.splitlines():
                     parsed = parse_user_line(raw.decode("utf-8", errors="ignore"))
                     if parsed:
@@ -267,6 +280,22 @@ class PlayerRegistry(QObject):
                 return False
             del rec["previous_nicks"][index]
             self.save()
+        self.data_changed.emit()
+        return True
+
+    def remove_old_nick_entry(self, steam_id: str, nick: str, changed_at: float) -> bool:
+        """Delete one old nickname identified by its value (an index can shift while a rename is logged)."""
+        with self._lock:
+            rec = self._players.get(steam_id)
+            if not rec:
+                return False
+            for i, item in enumerate(rec["previous_nicks"]):
+                if item["nick"] == nick and item["changed_at"] == changed_at:
+                    del rec["previous_nicks"][i]
+                    self.save()
+                    break
+            else:
+                return False
         self.data_changed.emit()
         return True
 

@@ -28,7 +28,7 @@
 6. Start SCUM. The chat translator and the map (`Ctrl + M`) work automatically once the game window is in the foreground.
 7. Optional: right-click the tray icon → **Settings** to pick your translation language, hotkeys and overlay look. The **interface language (English / Українська)** is under **Settings → General → Language**.
 
-The app creates its own `config.json`, `points.json` and `profiles.json` next to the exe on first use. You do not need to download or copy them.
+The app creates its own `config.json`, `points.json`, `profiles.json` and `players.json` next to the exe on first use. You do not need to download or copy them.
 
 ---
 
@@ -119,7 +119,7 @@ The integrated Tactical Map turns SCUM Island navigation and squad coordination 
   * Visual marker pins with sharp anchor tips placed accurately on coordinates.
   * Instant color picker (Red, Green, Blue, Purple, Gold, Cyan, Orange).
   * Live inline name editing with automatic saving.
-  * Player roster tags: assign teammates living or stationed at a base.
+  * **Base players:** type nicknames for a base. The app links them to SteamIDs collected from the game logs and follows renames automatically. Hover a base to see its players: 🔗 opens the Steam profile, and a name with ▾ lists the old nicknames with the date of each change.
   * Search & filter waypoints by name, sector, or player tag.
   * **"On Map"** button: smoothly centers and zooms the map to any pin.
   * **"Copy"** button: copies raw game coordinates to clipboard for sharing.
@@ -133,7 +133,7 @@ Overcome language barriers on international SCUM servers without leaving the gam
 
 ### ⚡ Key Translation Capabilities
 * **Live In-Game HUD Overlay:** Displays translated chat messages directly over your game screen with customizable background opacity and outline contrast.
-* **Squad / Team Highlighting (SCUM Green `#4ade80`):** Messages in squad channels (`[Squad]`, `(Team)`) are automatically identified and colored in vibrant SCUM Green so you never miss teammate callouts.
+* **In-game chat look:** the overlay uses the same font family (Bahnschrift), the partial black outline and the `[dd/mm/yyyy - HH:MM:SS]` timestamp as the game chat. Squadmates you list in **Settings → Chat → Players** are lime green (`#c2f800`), other chat is blue (`#00e6f3`), server messages are yellow. The game log does not say which channel a message came from, so local chat cannot be told apart from global chat.
 * **True-to-Game 10s Fade Behavior:** Incoming messages appear, stay visible for a configured timeout (default: 10 seconds), and fade away naturally just like native SCUM chat.
 * **Game Chat Synchronization (`T` and `Escape`):**
   * Pressing **`T`** opens SCUM chat, reveals previous chat history on the overlay, and summons the Quick Chat input box.
@@ -164,8 +164,8 @@ Overcome language barriers on international SCUM servers without leaving the gam
 
 * **Tray notification:** An amber `▲` badge appears on the tray icon when a new release is published on GitHub; the app also re-checks in the background every few hours.
 * **Steam-style update window:** compact progress bar with speed and ETA, cancel / retry, release notes on demand.
-* **Real one-click install:** the build is downloaded to `%LOCALAPPDATA%\SCUM_Chat_Translator\updates`, verified (size, executable header, SHA-256), swapped in place with automatic rollback, and the app restarts by itself. The Normal / Portable build is matched automatically.
-* **Strict user data protection:** `config.json`, `points.json` and `profiles.json` are never overwritten.
+* **Real one-click install:** the build is downloaded to `%LOCALAPPDATA%\SCUM_Chat_Translator\updates`, verified (size, executable header, SHA-256), self-tested (the new build is started once with `--smoke-test` before it replaces the current one), swapped in place with automatic rollback (the previous build is kept until the new one has run healthy), and the app restarts by itself. The Normal / Portable build is matched automatically.
+* **Strict user data protection:** `config.json`, `points.json`, `profiles.json` and `players.json` are never overwritten.
 
 ---
 
@@ -174,7 +174,8 @@ Overcome language barriers on international SCUM servers without leaving the gam
 * **Chat history window** (tray menu): search, filter by player / type / translated-only, export to TXT, CSV or JSON. Optional on-disk persistence with a size limit.
 * **Blocked words:** mask them, hide the message or show it untranslated; whole-word and case options.
 * **Language auto-detection:** skips translation when a message is already in your language (or in languages you list). Works offline for obvious scripts and uses the translation service's result otherwise.
-* **Profiles:** save named presets (translation, filters, overlay look) and switch from Settings or the tray menu.
+* **Players database (Settings → Players):** every nickname the game log shows is stored with the player's permanent SteamID. Renamed players expand into a list of old nicknames with dates; you can delete old nicknames, a player, or the whole base (always asked first). The **Collect SteamIDs** switch (on by default) turns collecting off: nothing is read or stored. Chat history is saved to `chat_history.jsonl` in `%LOCALAPPDATA%\SCUM_Chat_Translator` unless you turn that off in Settings → Chat.
+ * **Profiles:** save named presets (translation, filters, overlay look) and switch from Settings or the tray menu.
 * **Waypoint import / export** (JSON) with merge or replace.
 * Every feature has its own switch in Settings, so each user can tune or disable it.
 
@@ -207,7 +208,7 @@ Overcome language barriers on international SCUM servers without leaving the gam
 
 * When a new version is released, an amber `▲` appears on the tray icon and a notification pops up. Click it (or tray menu → **Update**) and press **Update now**: the app downloads, verifies and installs the new version, then restarts itself. Your settings, waypoints and profiles stay untouched.
 * You can also check manually: **Settings → Updates → Check for updates**.
-* Updating by hand is just as easy: download the new `.exe` and replace the old one. `config.json`, `points.json` and `profiles.json` live next to the exe and are kept.
+* Updating by hand is just as easy: download the new `.exe` and replace the old one. `config.json`, `points.json`, `profiles.json` and `players.json` live next to the exe and are kept.
 * Where files live: downloads go to `%LOCALAPPDATA%\SCUM_Chat_Translator\updates`, the log file to `%LOCALAPPDATA%\SCUM_Chat_Translator\logs\app.log`, chat history to `%LOCALAPPDATA%\SCUM_Chat_Translator\chat_history.jsonl`.
 
 ## 🧯 Troubleshooting
@@ -224,7 +225,7 @@ Overcome language barriers on international SCUM servers without leaving the gam
 
 ## 🧑‍💻 Build from source
 
-Requirements: Windows 10/11 (64-bit), Python 3.10–3.13, Git.
+Requirements: Windows 10/11 (64-bit), Python 3.12–3.13, Git.
 
 ```powershell
 git clone https://github.com/tankow79/scum-ui-translator-map.git

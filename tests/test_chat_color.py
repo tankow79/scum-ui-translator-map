@@ -28,6 +28,8 @@ def test_server_yellow_and_game_timestamp():
     assert game_timestamp("02:56:27", now) == "13/11/2026 - 02:56:27"
     assert game_timestamp("23:59:00", now) == "12/11/2026 - 23:59:00"
     assert game_timestamp("13/11/2026 - 02:56:27", now) == "13/11/2026 - 02:56:27"
-    local = datetime.strptime(log_time_to_local("2026.11.13-01.54.49"), "%d/%m/%Y - %H:%M:%S")
-    utc = datetime(2026, 11, 13, 1, 54, 49).replace(tzinfo=__import__("datetime").timezone.utc)
-    assert local == utc.astimezone().replace(tzinfo=None)
+    # computed through a different route (epoch -> local time) so the check is not a copy of the implementation
+    import calendar
+
+    epoch = calendar.timegm((2026, 11, 13, 1, 54, 49))
+    assert log_time_to_local("2026.11.13-01.54.49") == datetime.fromtimestamp(epoch).strftime("%d/%m/%Y - %H:%M:%S")

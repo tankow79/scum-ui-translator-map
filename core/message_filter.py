@@ -37,6 +37,8 @@ def split_list(raw: Any) -> List[str]:
         raw = [raw]
     if isinstance(raw, (list, tuple, set)):
         for item in raw:
+            if isinstance(item, (int, float)) and not isinstance(item, bool):
+                item = str(item)   # a purely numeric nickname typed into config.json
             if isinstance(item, str):
                 for part in re.split(r"[,\n;]", item):
                     part = part.strip()
@@ -62,7 +64,9 @@ class ChatFilter:
         for b in blacklist:
             if b in (sender_clean, sender_no_tag) or b in sender_words:
                 return True
-            if len(b) >= 3 and b in sender_clean:
+            # whole-word match inside the nickname (clan tags, decorations) but never inside another word:
+            # "ann" must not block "Joanna"
+            if len(b) >= 3 and re.search(r"(?<!\w)" + re.escape(b) + r"(?!\w)", sender_clean):
                 return True
         return False
 

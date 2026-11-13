@@ -25,6 +25,7 @@ from ui.settings_widgets import Section, make_button, muted_label
 
 ROLE_SID = Qt.ItemDataRole.UserRole
 ROLE_OLD_INDEX = Qt.ItemDataRole.UserRole + 1
+ROLE_OLD_AT = Qt.ItemDataRole.UserRole + 2
 
 
 def _format_date(ts: float) -> str:
@@ -68,7 +69,8 @@ class PlayersPage(QWidget):
         header = self.tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(1, 180)   # wide enough for a 17-digit SteamID link (the cell widget is not measured)
         self.tree.itemSelectionChanged.connect(self._update_buttons)
         section.add_widget(self.tree)
 
@@ -86,12 +88,26 @@ class PlayersPage(QWidget):
         section.add_widget(self.lbl_status)
         root.addWidget(section)
 
+        self._dirty = False
         if registry is not None:
             registry.data_changed.connect(self.refresh)
-        self.refresh()
+        self._rebuild()
 
     # ── view ─────────────────────────────────────────────────────────
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        if self._dirty:
+            self._rebuild()
+
     def refresh(self, *_):
+        """Registry changed (or the search text did): rebuild now if visible, otherwise on the next show."""
+        if self.isVisible():
+            self._rebuild()
+        else:
+            self._dirty = True
+
+    def _rebuild(self):
+        self._dirty = False
         if self.registry is None:
             return
         expanded = {self.tree.topLevelItem(i).data(0, ROLE_SID)
@@ -120,6 +136,7 @@ class PlayersPage(QWidget):
                 child = QTreeWidgetItem([old["nick"], tr("players.changed_on", date=_format_date(old["changed_at"]))])
                 child.setData(0, ROLE_SID, sid)
                 child.setData(0, ROLE_OLD_INDEX, index)
+                child.setData(0, ROLE_OLD_AT, old["changed_at"])
                 child.setForeground(0, Qt.GlobalColor.gray)
                 child.setForeground(1, Qt.GlobalColor.gray)
                 top.addChild(child)
@@ -163,8 +180,9 @@ class PlayersPage(QWidget):
         if not self.registry or not sel or sel[1] is None:
             return
         item = self.tree.selectedItems()[0]
-        if self._confirm(tr("players.confirm_delete_old", nick=item.text(0))):
-            self.registry.remove_old_nick(sel[0], sel[1])
+        nick, changed_at = item.text(0), item.data(0, ROLE_OLD_AT)
+        if self._confirm(tr("players.confirm_delete_old", nick=nick)):
+            self.registry.remove_old_nick_entry(sel[0], nick, changed_at)
 
     def _delete_player(self):
         sel = self._selected()

@@ -18,6 +18,7 @@ from PyQt6.QtGui import (
     QPainter,
     QPainterPath,
     QPen,
+    QPixmap,
     QWheelEvent,
 )
 from PyQt6.QtWidgets import (
@@ -271,6 +272,26 @@ class MapCanvasWidget(QWidget):
         self.show_keypads = self.cfg.get("map_show_keypads", True)
         self.active_point_id: Optional[str] = None
 
+        # Rendering performance: the map is a cached pixmap, only the visible part is drawn, frames are limited
+        # to ~60 per second while panning/zooming, and the cheap (non-smoothed) scaler is used until the view
+        # has settled for a moment. Without this every mouse-move repainted a huge scaled image at full quality.
+        self._pixmaps: dict = {}
+        self._interacting = False
+        self._frame_timer = QTimer(self)
+        self._frame_timer.setSingleShot(True)
+        self._frame_timer.setInterval(16)
+        self._frame_timer.timeout.connect(self.update)
+        self._settle_timer = QTimer(self)
+        self._settle_timer.setSingleShot(True)
+        self._settle_timer.setInterval(140)
+        self._settle_timer.timeout.connect(self._on_view_settled)
+        self._tag_font = QFont("Segoe UI Emoji", 9)
+        self._tag_font.setBold(True)
+        self._emoji_font = QFont("Segoe UI Emoji", 10)
+        self._grid_font_cache: dict = {}
+        self._hover_id: Optional[str] = None
+        self._sprites: dict = {}   # rendered pins, see _draw_markers
+
         # Hover card with clickable Steam links (bases with players)
         self._card = _MarkerCard(self)
         self._card_point_id: Optional[str] = None
@@ -308,7 +329,28 @@ class MapCanvasWidget(QWidget):
                 self.map_images["regular"] = QImage(reg_path)
             if "tactical" not in self.map_images and os.path.exists(tact_path):
                 self.map_images["tactical"] = QImage(tact_path)
-            self.map_images["tactical"] = QImage(tact_path)
+
+    def _current_pixmap(self):
+        """The current map as a (cached) QPixmap: much cheaper to draw repeatedly than a QImage."""
+        img = self.map_images.get(self.current_variant)
+        if not img or img.isNull():
+            return None
+        pix = self._pixmaps.get(self.current_variant)
+        if pix is None or pix.size() != img.size():
+            pix = QPixmap.fromImage(img)
+            self._pixmaps[self.current_variant] = pix
+        return pix
+
+    def _request_frame(self):
+        """Redraw soon (coalesced to ~60 fps) while the user pans or zooms."""
+        self._interacting = True
+        self._settle_timer.start()
+        if not self._frame_timer.isActive():
+            self._frame_timer.start()
+
+    def _on_view_settled(self):
+        self._interacting = False
+        self.update()   # one high-quality frame once the movement stops
 
     def set_variant(self, variant: str):
         if variant in ("regular", "tactical"):
@@ -406,7 +448,7 @@ class MapCanvasWidget(QWidget):
         self.pan_x = mx - (map_x * self.zoom)
         self.pan_y = my - (map_y * self.zoom)
 
-        self.update()
+        self._request_frame()
         event.accept()
 
     def mousePressEvent(self, event: QMouseEvent):
@@ -584,7 +626,7 @@ class MapCanvasWidget(QWidget):
             self._drag_start = event.pos()
             self.pan_x += delta.x()
             self.pan_y += delta.y()
-            self.update()
+            self._request_frame()
             event.accept()
             return
 
@@ -604,6 +646,11 @@ class MapCanvasWidget(QWidget):
 
                 # Cursor change and tooltip over a marker
                 hovered = self._find_marker_at(event.pos())
+                hovered_id = hovered.id if hovered else None
+                if hovered_id is not None and hovered_id == self._hover_id and (QToolTip.isVisible() or self._card.isVisible()):
+                    super().mouseMoveEvent(event)   # still over the same marker: nothing to rebuild
+                    return
+                self._hover_id = hovered_id
                 if hovered:
                     self.setCursor(Qt.CursorShape.PointingHandCursor)
                     cur_cat = getattr(hovered, "category", "default")
@@ -705,30 +752,33 @@ class MapCanvasWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
         # 1. Dark background around the map
         painter.fillRect(self.rect(), QColor("#090d16"))
 
-        cur_img = self.map_images.get(self.current_variant)
-        if not cur_img or cur_img.isNull():
+        pixmap = self._current_pixmap()
+        if pixmap is None:
             painter.setPen(QColor("#38bdf8"))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, tr("map_window.loading"))
             return
 
-        img_w = cur_img.width()
-        img_h = cur_img.height()
-        map_rect = QRectF(self.pan_x, self.pan_y, img_w * self.zoom, img_h * self.zoom)
+        map_rect = QRectF(self.pan_x, self.pan_y, pixmap.width() * self.zoom, pixmap.height() * self.zoom)
 
-        # 2. Draw the map itself
-        painter.drawImage(map_rect, cur_img)
+        # 2. Draw only the part of the map that is on screen (at 8x zoom the full scaled image is 20 000 px wide)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, not self._interacting)
+        visible = QRectF(0, 0, self.width(), self.height()).intersected(map_rect)
+        if not visible.isEmpty():
+            source = QRectF((visible.x() - self.pan_x) / self.zoom, (visible.y() - self.pan_y) / self.zoom,
+                            visible.width() / self.zoom, visible.height() / self.zoom)
+            painter.drawPixmap(visible, pixmap, source)
 
-        # 3. Sector and keypad grid
+        # 3. Sector and keypad grid (straight lines: no antialiasing needed)
         if self.show_grid:
             self._draw_grid(painter, map_rect)
 
         # 4. Points and markers
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         self._draw_markers(painter, map_rect)
 
     def _draw_grid(self, painter: QPainter, rect: QRectF):
@@ -766,8 +816,12 @@ class MapCanvasWidget(QWidget):
         rows = ["D", "C", "B", "A", "Z"]
         cols = ["4", "3", "2", "1", "0"]
 
-        font = QFont("Segoe UI", max(9, int(11 * min(self.zoom, 2.0))))
-        font.setBold(True)
+        size = max(9, int(11 * min(self.zoom, 2.0)))
+        font = self._grid_font_cache.get(size)
+        if font is None:
+            font = QFont("Segoe UI", size)
+            font.setBold(True)
+            self._grid_font_cache[size] = font
         painter.setFont(font)
 
         cell_w = mw / 5.0
@@ -778,6 +832,8 @@ class MapCanvasWidget(QWidget):
                 label = f"{r_name}{c_name}"
                 cx = x0 + c_idx * cell_w + 8
                 cy = y0 + r_idx * cell_h + 18
+                if not (-60 <= cx <= self.width() + 60 and -30 <= cy <= self.height() + 30):
+                    continue   # label is off screen
 
                 # Shadow for readability
                 painter.setPen(QColor(0, 0, 0, 200))
@@ -786,99 +842,113 @@ class MapCanvasWidget(QWidget):
                 painter.setPen(QColor("#38bdf8"))
                 painter.drawText(QPointF(cx, cy), label)
 
-    def _draw_markers(self, painter: QPainter, rect: QRectF):
-        mw = rect.width()
-        mh = rect.height()
-        x0 = rect.x()
-        y0 = rect.y()
+    MARKER_CACHE_LIMIT = 800
 
+    def _draw_markers(self, painter: QPainter, rect: QRectF):
+        """Draw the visible pins. Each distinct pin (+ name tag) is rendered once into a small pixmap and then
+        only blitted, so panning with many markers on screen costs a few microseconds per marker."""
         points = self.points_mgr.get_points()
         if not points:
             return
 
-        # Draw markers oldest to newest (newest on top)
+        mw, mh, x0, y0 = rect.width(), rect.height(), rect.x(), rect.y()
+        dpr = self.devicePixelRatioF()
+        width, height = self.width(), self.height()
+
+        # Oldest to newest (newest on top)
         for pt in reversed(points):
             sx = x0 + pt.norm_x * mw
             sy = y0 + pt.norm_y * mh
+            if not (-80 <= sx <= width + 80 and -20 <= sy <= height + 80):
+                continue   # the pin and its name tag are drawn above/around the point: keep a margin
 
-            # Skip markers outside the visible area
-            if not (0 <= sx <= self.width() and 0 <= sy <= self.height()):
-                continue
-
-            is_active = (pt.id == self.active_point_id)
             cur_cat = getattr(pt, "category", "default")
             cat_info = get_category_info(cur_cat)
-            pt_color_str = getattr(pt, "color", None) or cat_info["default_color"]
-            pin_color = QColor(pt_color_str)
-
-            # 1. Shadow under the pin tip on the map surface
-            painter.setBrush(QBrush(QColor(0, 0, 0, 160)))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPointF(sx, sy + 0.5), 4.5, 2.0)
-
-            # 2. Outer glow for the active pin
-            if is_active:
-                glow_col = QColor(pin_color)
-                glow_col.setAlpha(60)
-                painter.setBrush(QBrush(glow_col))
-                painter.drawEllipse(QPointF(sx, sy - 16.0), 22.0, 22.0)
-
-                glow_col.setAlpha(120)
-                painter.setBrush(QBrush(glow_col))
-                painter.drawEllipse(QPointF(sx, sy - 16.0), 14.0, 14.0)
-
-            # 3. Pin (vector path: round head on top, sharp tip exactly on the point)
-            pin_path = QPainterPath()
-            pin_path.moveTo(sx, sy)  # sharp tip exactly on the coordinate
-            pin_path.quadTo(sx + 10.0, sy - 8.0, sx + 10.0, sy - 16.0)
-            pin_path.arcTo(sx - 10.0, sy - 26.0, 20.0, 20.0, 0, 180)
-            pin_path.quadTo(sx - 10.0, sy - 8.0, sx, sy)
-            pin_path.closeSubpath()
-
-            # Fill with the chosen color and a contrasting outline
-            painter.setBrush(QBrush(pin_color))
-            border_color = QColor("#ffffff") if is_active else QColor("#090d16")
-            border_width = 1.8 if is_active else 1.2
-            painter.setPen(QPen(border_color, border_width))
-            painter.drawPath(pin_path)
-
-            # 4. Pin content (emoji, or a white dot for the classic marker)
-            if cur_cat == "default":
-                # Classic pin: small white inner dot
-                painter.setBrush(QBrush(QColor("#ffffff")))
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawEllipse(QPointF(sx, sy - 16.0), 2.8, 2.8)
-            else:
-                # Category emoji (🚗, ✈️, 🏍️, 🚤, 📦, 🏠)
-                painter.setFont(QFont("Segoe UI Emoji", 10))
-                painter.setPen(QColor("#ffffff"))
-                emoji_rect = QRectF(sx - 10.0, sy - 26.0, 20.0, 20.0)
-                painter.drawText(emoji_rect, Qt.AlignmentFlag.AlignCenter, cat_info["emoji"])
-
-            # 5. Compact name tag above the pin
             emoji_tag = f"{cat_info['emoji']} " if cur_cat != "default" else ""
             if pt.name != "None":
                 label_text = f"{emoji_tag}{pt.name} [{pt.sector}]"
             else:
                 label_text = f"{emoji_tag}[{pt.sector} {pt.keypad}]"
+            color = getattr(pt, "color", None) or cat_info["default_color"]
+            is_active = pt.id == self.active_point_id
 
-            tag_font = QFont("Segoe UI Emoji", 9)
-            tag_font.setBold(True)
-            painter.setFont(tag_font)
-            fm = painter.fontMetrics()
-            tw = fm.horizontalAdvance(label_text) + 12
-            th = fm.height() + 4
+            key = (label_text, cur_cat, color, is_active, dpr)
+            sprite = self._sprites.get(key)
+            if sprite is None:
+                if len(self._sprites) >= self.MARKER_CACHE_LIMIT:
+                    self._sprites.clear()
+                sprite = self._build_marker_sprite(label_text, cur_cat, cat_info, color, is_active, dpr)
+                self._sprites[key] = sprite
+            pixmap, tip_x, tip_y = sprite
+            painter.drawPixmap(QPointF(sx - tip_x, sy - tip_y), pixmap)
 
-            tag_rect = QRectF(sx - tw / 2.0, sy - 34.0 - th, tw, th)
+    def _build_marker_sprite(self, label_text: str, cur_cat: str, cat_info: dict, color: str,
+                             is_active: bool, dpr: float):
+        """Render one pin with its name tag. Returns (pixmap, tip_x, tip_y): where the pin tip is inside it."""
+        pin_color = QColor(color)
+        fm = QFontMetrics(self._tag_font)
+        tw = fm.horizontalAdvance(label_text) + 12
+        th = fm.height() + 4
 
-            # Tag background
-            painter.setBrush(QBrush(QColor(11, 15, 25, 230)))
-            painter.setPen(QPen(pin_color, 1))
-            painter.drawRoundedRect(tag_rect, 4, 4)
+        glow = 24.0
+        sprite_w = int(max(tw, 2 * glow) + 8)
+        top = 34.0 + th + 4.0                      # tip y inside the sprite: room for the tag above the pin
+        sprite_h = int(top + 8)
+        tip_x, tip_y = sprite_w / 2.0, top
 
-            # Name text
-            painter.setPen(QColor("#ffffff") if is_active else QColor("#f1f5f9"))
-            painter.drawText(tag_rect, Qt.AlignmentFlag.AlignCenter, label_text)
+        pixmap = QPixmap(int(sprite_w * dpr), int(sprite_h * dpr))
+        pixmap.setDevicePixelRatio(dpr)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        sx, sy = tip_x, tip_y
+
+        # 1. Shadow under the pin tip on the map surface
+        painter.setBrush(QBrush(QColor(0, 0, 0, 160)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QPointF(sx, sy + 0.5), 4.5, 2.0)
+
+        # 2. Outer glow for the active pin
+        if is_active:
+            glow_col = QColor(pin_color)
+            glow_col.setAlpha(60)
+            painter.setBrush(QBrush(glow_col))
+            painter.drawEllipse(QPointF(sx, sy - 16.0), 22.0, 22.0)
+            glow_col.setAlpha(120)
+            painter.setBrush(QBrush(glow_col))
+            painter.drawEllipse(QPointF(sx, sy - 16.0), 14.0, 14.0)
+
+        # 3. Pin (vector path: round head on top, sharp tip exactly on the point)
+        pin_path = QPainterPath()
+        pin_path.moveTo(sx, sy)
+        pin_path.quadTo(sx + 10.0, sy - 8.0, sx + 10.0, sy - 16.0)
+        pin_path.arcTo(sx - 10.0, sy - 26.0, 20.0, 20.0, 0, 180)
+        pin_path.quadTo(sx - 10.0, sy - 8.0, sx, sy)
+        pin_path.closeSubpath()
+        painter.setBrush(QBrush(pin_color))
+        painter.setPen(QPen(QColor("#ffffff") if is_active else QColor("#090d16"), 1.8 if is_active else 1.2))
+        painter.drawPath(pin_path)
+
+        # 4. Pin content (category emoji, or a white dot for the classic marker)
+        if cur_cat == "default":
+            painter.setBrush(QBrush(QColor("#ffffff")))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(sx, sy - 16.0), 2.8, 2.8)
+        else:
+            painter.setFont(self._emoji_font)
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(QRectF(sx - 10.0, sy - 26.0, 20.0, 20.0), Qt.AlignmentFlag.AlignCenter, cat_info["emoji"])
+
+        # 5. Compact name tag above the pin
+        painter.setFont(self._tag_font)
+        tag_rect = QRectF(sx - tw / 2.0, sy - 34.0 - th, tw, th)
+        painter.setBrush(QBrush(QColor(11, 15, 25, 230)))
+        painter.setPen(QPen(pin_color, 1))
+        painter.drawRoundedRect(tag_rect, 4, 4)
+        painter.setPen(QColor("#ffffff") if is_active else QColor("#f1f5f9"))
+        painter.drawText(tag_rect, Qt.AlignmentFlag.AlignCenter, label_text)
+        painter.end()
+        return pixmap, tip_x, tip_y
 
 
 class MapWindow(QWidget):
@@ -1026,7 +1096,7 @@ class MapWindow(QWidget):
         h.addWidget(_icon_btn("\u2212", tr("map_window.tip_zoom_out", default="Zoom out"), lambda: self._step_zoom(0.8)))
         h.addWidget(_icon_btn("\u27F2", tr("map_window.tip_reset"), self.canvas.reset_view))
 
-        btn_close = _icon_btn("\u2715", tr("map_window.tip_close"), self.close)
+        btn_close = _icon_btn("\u2715", tr("map_window.tip_close", hotkey=self.cfg.get("hotkey_toggle_map", "Ctrl+M")), self.close)
         btn_close.setStyleSheet("""
             QPushButton {
                 background-color: #1e293b;
@@ -1105,7 +1175,6 @@ class MapWindow(QWidget):
     def mouseMoveEvent(self, event: QMouseEvent):
         if event.buttons() == Qt.MouseButton.LeftButton and not self._drag_pos.isNull():
             self.move(event.globalPosition().toPoint() - self._drag_pos)
-            self.save_geometry()
             event.accept()
         else:
             super().mouseMoveEvent(event)
@@ -1142,15 +1211,18 @@ class MapWindow(QWidget):
         self.setGeometry(x, y, w, h)
 
     def save_geometry(self):
-        self.cfg.set("map_x", self.x())
-        self.cfg.set("map_y", self.y())
-        self.cfg.set("map_width", self.width())
-        self.cfg.set("map_height", self.height())
+        with self.cfg.batch():
+            self.cfg.set("map_x", self.x())
+            self.cfg.set("map_y", self.y())
+            self.cfg.set("map_width", self.width())
+            self.cfg.set("map_height", self.height())
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Initialize the view on first show
-        self.canvas.reset_view()
+        # Initialize the view on the first show only (re-showing must keep the user's zoom/pan and focus)
+        if not getattr(self, "_view_initialized", False):
+            self._view_initialized = True
+            self.canvas.reset_view()
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Escape:

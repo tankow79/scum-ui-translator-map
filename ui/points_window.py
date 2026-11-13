@@ -406,9 +406,9 @@ class PointRowWidget(QFrame):
 
     def _on_name_edited(self):
         new_name = self.txt_name.text().strip()
-        if not new_name:
-            new_name = "None"
-            self.txt_name.setText("None")
+        if not new_name:  # an empty name is not stored: restore the previous one
+            self.txt_name.setText("" if self.point.name == "None" else self.point.name)
+            return
         if new_name != self.point.name:
             self.mgr.update_point_name(self.point.id, new_name)
 
@@ -465,6 +465,9 @@ class PointsWindow(QWidget):
         self.points_mgr = points_manager
         self._drag_pos = QPoint()
         self._row_widgets: Dict[str, PointRowWidget] = {}
+        self._build_queue: list = []        # points whose rows are still to be created (large imports)
+        self._build_generation = 0
+        self._deleted_ids: set = set()
 
         self.init_window_flags()
         self.init_ui()
@@ -677,7 +680,7 @@ class PointsWindow(QWidget):
         if not points:
             self._notify(tr("points.export_empty"))
             return
-        path, _ = QFileDialog.getSaveFileName(self, tr("points.btn_export"), "scum_waypoints.json", "JSON (*.json)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("points.btn_export"), "scum_waypoints.json", tr("file_filters.json"))
         if not path:
             return
         try:
@@ -687,14 +690,17 @@ class PointsWindow(QWidget):
             self._notify(tr("points.export_failed", error=str(exc)), warning=True)
 
     def _import_points(self):
-        path, _ = QFileDialog.getOpenFileName(self, tr("points.btn_import"), "", "JSON (*.json);;All files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("points.btn_import"), "", tr("file_filters.json") + ";;" + tr("file_filters.all"))
         if not path:
             return
         replace = self._ask(tr("points.import_replace_prompt")) == QMessageBox.StandardButton.Yes
         try:
             result = self.points_mgr.import_from_file(path, replace=replace)
-        except (OSError, ValueError) as exc:
+        except OSError as exc:
             self._notify(tr("points.import_failed", error=str(exc)), warning=True)
+            return
+        except Exception:  # bad JSON, wrong structure, too deeply nested, no usable entry...
+            self._notify(tr("points.import_failed", error=tr("points.import_bad_file")), warning=True)
             return
         self._notify(tr("points.import_done", added=result.added, duplicates=result.duplicates, invalid=result.invalid))
 
@@ -733,8 +739,25 @@ class PointsWindow(QWidget):
         points = self.points_mgr.get_points()
         self.lbl_count.setText(f"({len(points)})")
 
-        for pt in points:
-            self._create_row_widget(pt, prepend=False)
+        # A row widget costs ~1 ms, so a big import (thousands of points) would freeze the window for seconds.
+        # The first screenful is built at once, the rest in small batches between event-loop turns.
+        self._build_generation += 1
+        self._build_queue = list(points)
+        self._deleted_ids = set()
+        self._build_batch(self._build_generation, self.FIRST_BATCH)
+
+    FIRST_BATCH = 60
+    NEXT_BATCH = 40
+
+    def _build_batch(self, generation: int, size: int = NEXT_BATCH):
+        if generation != self._build_generation:
+            return  # a newer refresh replaced this one
+        chunk, self._build_queue = self._build_queue[:size], self._build_queue[size:]
+        for pt in chunk:
+            if pt.id not in self._deleted_ids and pt.id not in self._row_widgets:
+                self._create_row_widget(pt, prepend=False)
+        if self._build_queue:
+            QTimer.singleShot(0, lambda g=generation: self._build_batch(g))
 
     def _create_row_widget(self, point: MapPoint, prepend: bool = False) -> PointRowWidget:
         row = PointRowWidget(point, self.points_mgr, self.list_container)
@@ -761,12 +784,15 @@ class PointsWindow(QWidget):
             self._check_row_visibility(row)
 
     def _on_point_deleted(self, point_id: str):
+        self._deleted_ids.add(point_id)
         if point_id in self._row_widgets:
             widget = self._row_widgets.pop(point_id)
             widget.deleteLater()
         self.lbl_count.setText(f"({len(self.points_mgr.get_points())})")
 
     def _on_points_cleared(self):
+        self._build_generation += 1   # stop any batch that is still building rows
+        self._build_queue = []
         for row in self._row_widgets.values():
             row.deleteLater()
         self._row_widgets.clear()
@@ -821,7 +847,6 @@ class PointsWindow(QWidget):
     def mouseMoveEvent(self, event: QMouseEvent):
         if event.buttons() == Qt.MouseButton.LeftButton and not self._drag_pos.isNull():
             self.move(event.globalPosition().toPoint() - self._drag_pos)
-            self.save_geometry()
             event.accept()
         else:
             super().mouseMoveEvent(event)
@@ -864,10 +889,11 @@ class PointsWindow(QWidget):
         self.setGeometry(x, y, w, h)
 
     def save_geometry(self):
-        self.cfg.set("points_x", self.x())
-        self.cfg.set("points_y", self.y())
-        self.cfg.set("points_width", self.width())
-        self.cfg.set("points_height", self.height())
+        with self.cfg.batch():
+            self.cfg.set("points_x", self.x())
+            self.cfg.set("points_y", self.y())
+            self.cfg.set("points_width", self.width())
+            self.cfg.set("points_height", self.height())
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Escape:

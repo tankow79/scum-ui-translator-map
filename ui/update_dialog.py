@@ -23,8 +23,15 @@ from PyQt6.QtWidgets import (
 )
 
 from core.i18n import tr
-from core.updater import UpdateDownloader, UpdateError, UpdateInfo, UpdateInstaller
-from core.version import GITHUB_REPO_URL, __version__
+from core.updater import (
+    UpdateDownloader,
+    UpdateError,
+    UpdateInfo,
+    UpdateInstaller,
+    localize_error,
+    safe_release_page,
+)
+from core.version import __version__
 
 log = logging.getLogger("scum.update_dialog")
 
@@ -139,7 +146,7 @@ class UpdateDialog(QDialog):
         self._build_ui()
         self.downloader.progress.connect(self._on_progress)
         self.downloader.finished.connect(self._on_downloaded)
-        self.downloader.error.connect(self._on_error)
+        self.downloader.error.connect(self._on_download_error)
         self._install_done.connect(self._on_installed)
         self._install_failed.connect(self._on_error)
         self._show_prompt()
@@ -253,7 +260,7 @@ class UpdateDialog(QDialog):
 
     def _show_error(self, message: str):
         self.lbl_title.setText(tr("update.error_title"))
-        self.lbl_error.setText(message)
+        self.lbl_error.setText(localize_error(message))
         self.btn_primary.setText(tr("update.btn_retry"))
         self.btn_secondary.setText(tr("update.btn_release_page"))
         self.btn_details.setText(tr("update.whats_new"))
@@ -274,6 +281,8 @@ class UpdateDialog(QDialog):
             self.reject()
 
     def _close_requested(self):
+        if self._state in ("installing", "restarting"):
+            return
         if self._state == "downloading":
             self.downloader.cancel()
         self.reject()
@@ -284,7 +293,7 @@ class UpdateDialog(QDialog):
         self.adjustSize()
 
     def _open_release_page(self):
-        webbrowser.open(self.update_info.html_url or GITHUB_REPO_URL)
+        webbrowser.open(safe_release_page(self.update_info.html_url))
 
     def _show_file(self):
         if self._downloaded_path and os.path.exists(self._downloaded_path):
@@ -295,6 +304,11 @@ class UpdateDialog(QDialog):
         if not info.download_url:
             self._open_release_page()
             self._show_error(tr("update.no_direct_link"))
+            return
+        if not info.sha256:
+            # Without a published checksum the file cannot be verified: never install it automatically
+            self._open_release_page()
+            self._show_error(tr("update_errors.no_checksum"))
             return
         self._show_downloading()
         self._started_at = time.monotonic()
@@ -347,13 +361,27 @@ class UpdateDialog(QDialog):
         try:
             UpdateInstaller.restart_application(exe_path)
         except OSError as exc:
-            self._on_error(f"The update was installed but the app could not restart: {exc}")
+            self._on_error(tr("update.restart_failed", error=str(exc)))
             return
         app = QApplication.instance()
         if app:
             app.quit()
-        # Safety net: background threads must not keep the old process alive.
-        QTimer.singleShot(4000, lambda: os._exit(0))
+        # Safety net: background threads must not keep the old process alive. A plain thread timer is used
+        # because the Qt event loop has already been asked to quit and would never run a QTimer.
+        killer = threading.Timer(4.0, os._exit, args=(0,))
+        killer.daemon = True
+        killer.start()
+
+    def _on_download_error(self, message: str):
+        # A cancelled download must not flip the dialog into an error state
+        if self._state == "downloading":
+            self._on_error(message)
+
+    def reject(self):
+        # Closing mid-install would leave a half-replaced application: ignore Esc and the close button
+        if self._state in ("installing", "restarting"):
+            return
+        super().reject()
 
     def _on_error(self, message: str):
         self._busy = False
@@ -376,7 +404,7 @@ class UpdateDialog(QDialog):
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape and self._state != "restarting":
+        if event.key() == Qt.Key.Key_Escape and self._state not in ("installing", "restarting"):
             self._close_requested()
             return
         super().keyPressEvent(event)

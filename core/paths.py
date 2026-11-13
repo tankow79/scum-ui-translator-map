@@ -14,7 +14,13 @@ def _ensure_dir(path: str) -> str:
 
 
 def get_user_data_dir() -> str:
-    """Per-user writable directory: %LOCALAPPDATA%\\SCUM_Chat_Translator."""
+    """Per-user writable directory: %LOCALAPPDATA%\\SCUM_Chat_Translator.
+
+    ``SCUM_DATA_DIR`` overrides it (used by the start-up self-test so it never touches real data).
+    """
+    override = os.environ.get("SCUM_DATA_DIR")
+    if override:
+        return _ensure_dir(override)
     base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".local", "share")
     return _ensure_dir(os.path.join(base, APP_DIR_NAME))
 

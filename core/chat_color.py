@@ -25,7 +25,7 @@ _COLOR_TAG_RE = re.compile(
     r"""|(?:\[\s*color\s*=\s*""" + _HEX + r"""\s*\])""",
     re.IGNORECASE,
 )
-_ANY_TAG_RE = re.compile(r"</?\s*(?:color|font)\b[^>]*>|\[/?\s*color[^\]]*\]", re.IGNORECASE)
+_ANY_TAG_RE = re.compile(r"</?\s*(?:color|font)\b[^<>]{0,60}>|\[\s*color\s*=[^\]]{0,40}\]|\[/color\]", re.IGNORECASE)
 
 
 def parse_nick_list(value) -> List[str]:

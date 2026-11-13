@@ -574,7 +574,10 @@ class ChatOverlay(QWidget):
             if self._translator:
                 my_lang = self.combo_src.currentData() or "uk"
                 target_lang = self.combo_tgt.currentData() or "en"
-                trans, _ = self._translator.translate_custom(orig, target=target_lang, source=my_lang)
+                try:
+                    trans, _ = self._translator.translate_custom(orig, target=target_lang, source=my_lang)
+                except Exception:  # network failure: fall back to the original text instead of crashing
+                    trans = orig
                 self._current_translation = trans
                 self.lbl_translation.setText(trans)
 
@@ -674,10 +677,22 @@ class ChatOverlay(QWidget):
         self.setGeometry(x, y, w, h)
 
     def save_geometry(self):
-        self.cfg.set("overlay_x", self.x())
-        self.cfg.set("overlay_y", self.y())
-        self.cfg.set("overlay_width", self.width())
-        self.cfg.set("overlay_height", self.height())
+        with self.cfg.batch():
+            self.cfg.set("overlay_x", self.x())
+            self.cfg.set("overlay_y", self.y())
+            self.cfg.set("overlay_width", self.width())
+            self.cfg.set("overlay_height", self.height())
+
+    def _schedule_save_geometry(self):
+        """Debounced geometry save: resizing fires many events, one write is enough."""
+        timer = getattr(self, "_geo_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(400)
+            timer.timeout.connect(self.save_geometry)
+            self._geo_timer = timer
+        timer.start()
 
     def set_in_chat_mode(self, in_chat: bool):
         """
@@ -829,7 +844,7 @@ class ChatOverlay(QWidget):
         )
         self._entries.append(entry)
 
-        max_msgs = self.cfg.get("max_messages", 20)
+        max_msgs = max(1, int(self.cfg.get("max_messages", 20) or 20))
         if len(self._entries) > max_msgs:
             self._entries = self._entries[-max_msgs:]
 
@@ -849,6 +864,7 @@ class ChatOverlay(QWidget):
         if not visible_entries:
             if self.chat_view.toPlainText():
                 self.chat_view.clear()
+                self._last_rendered_html = None
                 self.update()
             return
 
@@ -911,10 +927,16 @@ class ChatOverlay(QWidget):
             part += '</div>'
             html_parts.append(part)
 
-        self.chat_view.setHtml("".join(html_parts))
-        self.chat_view.verticalScrollBar().setValue(
-            self.chat_view.verticalScrollBar().maximum()
-        )
+        rendered = "".join(html_parts)
+        if rendered == getattr(self, "_last_rendered_html", None):
+            self.chat_view.viewport().update()  # e.g. the outline setting changed
+            return  # nothing changed: do not rebuild the document or yank the scroll position
+        self._last_rendered_html = rendered
+        bar = self.chat_view.verticalScrollBar()
+        was_at_bottom = bar.value() >= bar.maximum() - 4
+        self.chat_view.setHtml(rendered)
+        if was_at_bottom or not self.in_chat_mode:
+            bar.setValue(bar.maximum())
         self.chat_view.viewport().update()
         self.update()
 
@@ -968,7 +990,7 @@ class ChatOverlay(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if not self.is_locked:
-            self.save_geometry()
+            self._schedule_save_geometry()
 
     def closeEvent(self, event):
         try:

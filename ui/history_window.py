@@ -1,6 +1,7 @@
 """Chat history viewer with search, filters and export (TXT / CSV / JSON)."""
 
 import logging
+import os
 from typing import List
 
 from PyQt6.QtCore import Qt, QTimer
@@ -171,15 +172,15 @@ class HistoryWindow(QWidget):
     def _export(self):
         path, selected = QFileDialog.getSaveFileName(
             self, tr("history.export"), "scum_chat_history.txt",
-            "Text (*.txt);;CSV (*.csv);;JSON (*.json)",
+            tr("file_filters.text") + ";;" + tr("file_filters.csv") + ";;" + tr("file_filters.json"),
         )
         if not path:
             return
         fmt = "csv" if "csv" in selected.lower() else "json" if "json" in selected.lower() else "txt"
-        if "." not in path.rsplit("\\", 1)[-1]:
+        if not os.path.splitext(os.path.basename(path))[1]:
             path += f".{fmt}"
         try:
-            count = self.history.export(path, self._rows)
+            count = self.history.export(path, self._rows, fmt)
             QMessageBox.information(self, tr("history.title"), tr("history.export_done", count=count, path=path))
         except (OSError, ValueError) as exc:
             log.warning("History export failed: %s", exc)

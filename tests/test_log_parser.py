@@ -75,3 +75,34 @@ def test_parser_squad_message():
     parser._process_line(line3)
     assert len(captured) == 3
     assert captured[2][3] == "squad"
+
+
+def test_parser_thread_start_reads_file_and_stops(tmp_path):
+    """start()/stop() and the tail loop were never exercised; a missing attribute crashed the app on launch."""
+    import time
+
+    log_file = tmp_path / "SCUM.log"
+    log_file.write_text(
+        "[2026.11.13-01.54.49:390][201]LogSCUM: Message from user: AndraX (76561198995660378) (hash: 0985AB)\n"
+        "[2026.11.13-01.54.49:390][201]LogSCUM: Message: AndraX: Hello\n",
+        encoding="utf-8",
+    )
+    messages, players = [], []
+    parser = ScumLogParser(str(log_file), lambda *a: messages.append(a), lambda *a: players.append(a))
+    parser.start()
+    try:
+        parser.start()  # second start() is a no-op
+        deadline = time.time() + 5
+        while (not messages or not players) and time.time() < deadline:
+            time.sleep(0.05)
+        assert parser._thread is not None and parser._thread.is_alive()
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write("[2026.11.13-01.56.27:866][217]LogSCUM: Message: AndraX: second\n")
+        deadline = time.time() + 5
+        while len(messages) < 2 and time.time() < deadline:
+            time.sleep(0.05)
+    finally:
+        parser.stop()
+    assert [m[2] for m in messages] == ["Hello", "second"]
+    assert players and players[0][:2] == ("76561198995660378", "AndraX")
+    assert not parser._thread.is_alive()

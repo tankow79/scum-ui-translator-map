@@ -225,7 +225,9 @@ def page(tmp_path):
     reg.observe(SID, "Old", HASH, time.time() - 100)
     reg.observe(SID, "New", HASH, time.time())
     reg.observe(SID2, "Solo", HASH, time.time())
-    return reg, PlayersPage(reg)
+    pg = PlayersPage(reg)
+    pg.show()
+    return reg, pg
 
 
 def _top(pg, nick):

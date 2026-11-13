@@ -1,3 +1,4 @@
+import math
 import re
 import time
 import uuid
@@ -8,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # Example: {X=174468.797 Y=345933.000 Z=34103.105|P=342.318665 Y=117.616730 R=0.000000}
 # Or short form: {X=174468.797 Y=345933.000 Z=34103.105}
 SCUM_COORD_REGEX = re.compile(
-    r'\{X=(?P<x>[-0-9\.]+)\s+Y=(?P<y>[-0-9\.]+)\s+Z=(?P<z>[-0-9\.]+)(?:\|P=(?P<p>[-0-9\.]+)\s+Y=(?P<py>[-0-9\.]+)\s+R=(?P<r>[-0-9\.]+))?\}',
+    r'\{X=(?P<x>-?\d+(?:\.\d+)?)\s+Y=(?P<y>-?\d+(?:\.\d+)?)\s+Z=(?P<z>-?\d+(?:\.\d+)?)(?:\|P=(?P<p>-?\d+(?:\.\d+)?)\s+Y=(?P<py>-?\d+(?:\.\d+)?)\s+R=(?P<r>-?\d+(?:\.\d+)?))?\}',
     re.IGNORECASE
 )
 
@@ -65,10 +66,9 @@ def get_sector_info(norm_x: float, norm_y: float) -> Tuple[str, str]:
 
     # 3. Keypad (1..9 inside each 3x3 sector)
     # n_in_sec (0..2), m_in_sec (0..2)
-    sub_col = int((norm_x * 15.0) % 3.0)
-    sub_row = int((norm_y * 15.0) % 3.0)
-    sub_col = max(0, min(2, sub_col))
-    sub_row = max(0, min(2, sub_row))
+    # (computed from the clamped sector index, so the map's east/south edge stays in the last keypad column/row)
+    sub_col = max(0, min(2, int(norm_x * 15.0) - 3 * col_idx))
+    sub_row = max(0, min(2, int(norm_y * 15.0) - 3 * row_idx))
 
     # Standard SCUM numpad:
     # 7 8 9 (top row: sub_row=0)
@@ -140,6 +140,14 @@ POINT_CATEGORIES: Dict[str, Dict[str, Any]] = {
 }
 
 
+def _keyword_in(keyword: str, text: str) -> bool:
+    """Latin keywords match from the start of a word ("car" in "my car", not in "Scarlet" or "Database");
+    other scripts keep the substring match because their keywords are stems."""
+    if keyword.isascii():
+        return re.search(r"(?<![a-z0-9])" + re.escape(keyword), text) is not None
+    return keyword in text
+
+
 def detect_category_from_name(name: str) -> str:
     """
     Automatically detects the point category from its name (chat message or point name).
@@ -152,7 +160,7 @@ def detect_category_from_name(name: str) -> str:
         if cat_id == "default":
             continue
         for kw in data["keywords"]:
-            if kw in low:
+            if _keyword_in(kw, low):
                 return cat_id
     return "default"
 
@@ -198,7 +206,7 @@ class MapPoint:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MapPoint":
-        name = data.get("name", "None")
+        name = str(data.get("name") or "None")
         cat = data.get("category")
         if not cat:
             cat = detect_category_from_name(name)
@@ -252,9 +260,14 @@ def parse_chat_coordinate(text: str, time_str: Optional[str] = None) -> Optional
         return None
 
     raw_coord = match.group(0)
-    x = float(match.group("x"))
-    y = float(match.group("y"))
-    z = float(match.group("z"))
+    try:
+        x = float(match.group("x"))
+        y = float(match.group("y"))
+        z = float(match.group("z"))
+    except ValueError:  # a malformed number in a chat message must never crash the app
+        return None
+    if not all(math.isfinite(v) for v in (x, y, z)):   # "{X=999...9 ..."  parses as inf
+        return None
 
     name = extract_point_name(text, match)
     category = detect_category_from_name(name)

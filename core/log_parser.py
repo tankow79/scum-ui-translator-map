@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import threading
@@ -6,6 +7,9 @@ from typing import Callable, Optional
 
 from core.chat_color import log_time_to_local
 from core.players import parse_user_line
+from utils.shared_open import open_shared_binary
+
+log = logging.getLogger("scum.parser")
 
 
 class ScumLogParser:
@@ -26,6 +30,10 @@ class ScumLogParser:
         self.log_path = log_path
         self.on_message = on_message
         self.on_player = on_player
+        self._running = False
+        self._reopen = False
+        self._last_nick = ""
+        self._thread: Optional[threading.Thread] = None
 
         # Regexes for SCUM chat messages
         # 1. Regular player messages
@@ -40,7 +48,9 @@ class ScumLogParser:
         )
 
     def set_log_path(self, new_path: str):
-        self.log_path = new_path
+        if new_path != self.log_path:
+            self.log_path = new_path
+            self._reopen = True  # the tail loop closes the old file and starts on the new one
 
     def start(self):
         if self._running:
@@ -61,21 +71,30 @@ class ScumLogParser:
 
     def _tail_loop(self):
         file = None
+        pending = b""  # a line that is still being written by the game
 
         while self._running:
             try:
+                if self._reopen:
+                    self._reopen = False
+                    if file is not None:
+                        file.close()
+                        file = None
+                    pending = b""
+
                 if not os.path.exists(self.log_path):
                     time.sleep(1.0)
                     continue
 
                 if file is None:
                     try:
-                        file = open(self.log_path, encoding="utf-8", errors="ignore")
+                        file = open_shared_binary(self.log_path)
                         # On start, load the last ~4 KB to immediately show recent chat messages
                         file.seek(0, os.SEEK_END)
                         end_pos = file.tell()
                         start_pos = max(0, end_pos - 8192)
                         file.seek(start_pos, os.SEEK_SET)
+                        pending = b""
                         if start_pos > 0:
                             file.readline()  # skip a possibly truncated line
                     except Exception:
@@ -86,19 +105,30 @@ class ScumLogParser:
                 if not line:
                     # Check whether the file shrank (game restart / log rotation)
                     try:
-                        cur_size = os.path.getsize(self.log_path)
-                        if cur_size < file.tell():
-                            file.close()
+                        path_stat = os.stat(self.log_path)
+                        open_stat = os.fstat(file.fileno())
+                        rotated = (path_stat.st_ino, path_stat.st_dev) != (open_stat.st_ino, open_stat.st_dev)
+                        if rotated or path_stat.st_size < file.tell():
+                            file.close()  # the game rotated the log (renamed it / started a new one)
                             file = None
+                            pending = b""
                             continue
                     except OSError:
                         pass
                     time.sleep(0.15)
                     continue
 
-                self._process_line(line.strip())
+                if not line.endswith(b"\n"):
+                    pending += line  # incomplete: wait for the rest instead of parsing half a message
+                    if len(pending) > 1_000_000:  # a runaway line without a newline must not grow forever
+                        pending = b""
+                    time.sleep(0.05)
+                    continue
+                line, pending = pending + line, b""
+                self._process_line(line.decode("utf-8", errors="ignore").strip())
 
             except Exception:
+                log.exception("Log parser error (continuing)")
                 time.sleep(0.5)
 
         if file:
@@ -111,11 +141,12 @@ class ScumLogParser:
         if "LogSCUM:" not in line:
             return
 
-        if self.on_player is not None:
-            parsed = parse_user_line(line)
-            if parsed:
+        parsed = parse_user_line(line)
+        if parsed:
+            self._last_nick = parsed[1]
+            if self.on_player is not None:
                 self.on_player(*parsed)
-                return
+            return
 
         msg_type = "player"
         m = self._pattern_player.match(line)
@@ -128,9 +159,18 @@ class ScumLogParser:
             sender = m.group("sender").strip()
             msg = m.group("msg").strip()
 
-            # Strip quotes if present ("text" -> text)
-            if msg.startswith('"') and msg.endswith('"') and len(msg) >= 2:
-                msg = msg[1:-1].strip()
+            # A nickname that contains ':' (the pattern stops at the first one): trust the nickname the game
+            # announced on the preceding "Message from user" line
+            full = f"{sender}:{m.group('msg')}"
+            known = self._last_nick
+            if known and ":" in known and full.lower().startswith(known.lower() + ":"):
+                sender = known
+                msg = full[len(known) + 1:].strip()
+
+            # Strip quotes if present ("text" -> text, also "text"!)
+            quoted = re.fullmatch(r'"(.*)"[!.?]?', msg, re.DOTALL)
+            if quoted and len(msg) >= 2:
+                msg = quoted.group(1).strip()
 
             # Detect squad / team chat
             # In SCUM logs squad chat is marked by prefixes/tags in the sender or message:
@@ -144,8 +184,6 @@ class ScumLogParser:
             )
             if (
                 any(tag in lower_sender for tag in squad_tags) or
-                lower_sender.startswith("squad ") or lower_sender.startswith("team ") or
-                lower_sender.startswith("сквад ") or lower_sender.startswith("отряд ") or
                 any(lower_msg.startswith(tag) for tag in squad_tags)
             ):
                 msg_type = "squad"

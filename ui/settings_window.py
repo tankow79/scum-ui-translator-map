@@ -24,7 +24,7 @@ from core.chat_color import parse_nick_list
 from core.config_manager import ConfigManager
 from core.i18n import LocalizationManager, tr
 from core.languages import ALL_LANGUAGES
-from core.updater import UpdateChecker
+from core.updater import UpdateChecker, localize_error
 from core.version import GITHUB_REPO_URL, __version__
 from ui.flow_layout import button_row
 from ui.players_page import PlayersPage
@@ -213,6 +213,13 @@ class SettingsDialog(QDialog):
         self.init_ui()
         self.load_settings()
 
+    def showEvent(self, event):  # noqa: N802
+        # The dialog is created once and re-shown: discard edits that were cancelled or hidden with Esc
+        if getattr(self, "_shown_once", False):
+            self.load_settings()
+        self._shown_once = True
+        super().showEvent(event)
+
     # ── construction ─────────────────────────────────────────────────
     def init_ui(self):
         root = QVBoxLayout(self)
@@ -302,7 +309,7 @@ class SettingsDialog(QDialog):
         s.add_layout(box)
         self.txt_log_path.setMinimumWidth(120)
         self.txt_nickname = QLineEdit()
-        self.txt_nickname.setPlaceholderText("Survivor")
+        self.txt_nickname.setPlaceholderText(tr("settings.own_nickname_placeholder"))
         s.add_field(tr("settings.own_nickname"), self.txt_nickname)
         page.add_section(s)
 
@@ -459,7 +466,7 @@ class SettingsDialog(QDialog):
         page = SettingsPage()
         self.tab_profiles = ProfilesTab(self.profiles)
         self.tab_profiles.profile_applied.connect(self._on_profile_applied)
-        self.tab_profiles.snapshot_requested.connect(self._write_to_cfg)
+        self.tab_profiles.snapshot_requested.connect(self._snapshot_to_cfg)
         page.add_section(self.tab_profiles)
         page.finish()
         return page
@@ -500,7 +507,7 @@ class SettingsDialog(QDialog):
             max(0, self.combo_display_mode.findData(self.cfg.get("ui_display_mode", "none"))))
         self.slider_fade.setValue(self.cfg.get("message_fade_timeout", 10))
         self._on_fade_slider_changed(self.slider_fade.value())
-        opacity = int(self.cfg.get("bg_opacity", 0.5) * 100)
+        opacity = round(self.cfg.get("bg_opacity", 0.5) * 100)
         self.slider_opacity.setValue(opacity)
         self.badge_opacity.setText(f"{opacity}%")
         font = self.cfg.get("font_size", 22)
@@ -538,7 +545,7 @@ class SettingsDialog(QDialog):
 
         def on_error(err_msg):
             self.btn_check_update.setEnabled(True)
-            self.lbl_update_status.setText(tr("settings.update_error", error=err_msg))
+            self.lbl_update_status.setText(tr("settings.update_error", error=localize_error(err_msg)))
 
         checker.update_available.connect(on_update_available)
         checker.no_update_found.connect(on_no_update)
@@ -555,7 +562,7 @@ class SettingsDialog(QDialog):
         default_dir = os.path.expandvars(r"%LOCALAPPDATA%\SCUM\Saved\Logs")
         file_path, _ = QFileDialog.getOpenFileName(
             self, tr("settings.log_dialog_title"), default_dir if os.path.exists(default_dir) else "",
-            "Log Files (*.log);;All Files (*)")
+            tr("file_filters.log") + ";;" + tr("file_filters.all"))
         if file_path:
             self.txt_log_path.setText(file_path)
 
@@ -565,7 +572,16 @@ class SettingsDialog(QDialog):
         self.accept()
 
     def _write_to_cfg(self):
-        """Persist every widget value into the config (without closing the dialog)."""
+        """Persist every widget value into the config (without closing the dialog), in one file write."""
+        with self.cfg.batch():
+            self._write_widgets_to_cfg()
+
+    def _snapshot_to_cfg(self):
+        """Profile snapshot: the widget values become the live config, so the running app must hear about it."""
+        self._write_to_cfg()
+        self.settings_changed.emit()
+
+    def _write_widgets_to_cfg(self):
         self.tab_language.save(self.cfg)
         self.section_words.save(self.cfg)
         self.section_detect.save(self.cfg)
