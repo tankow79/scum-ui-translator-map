@@ -71,18 +71,25 @@ def check_single_instance(mutex_name: str = "SCUM_Chat_Translator_Mutex_Unique",
     import time
 
     global _app_mutex_handle
-    kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
-    kernel32.CreateMutexW.restype = wintypes.HANDLE
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    # GetLastError must be read through a library loaded with use_last_error, otherwise another call in between
+    # can overwrite it and a second copy of the program would start
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+    k32.CreateMutexW.restype = wintypes.HANDLE
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
     ERROR_ALREADY_EXISTS = 183
     deadline = time.monotonic() + max(0.0, wait_seconds)
     while True:
-        handle = kernel32.CreateMutexW(None, False, mutex_name)
-        if kernel32.GetLastError() != ERROR_ALREADY_EXISTS:
+        ctypes.set_last_error(0)
+        handle = k32.CreateMutexW(None, False, mutex_name)
+        error = ctypes.get_last_error()
+        if handle and error != ERROR_ALREADY_EXISTS:
             _app_mutex_handle = handle
             return True
         if handle:
-            kernel32.CloseHandle(handle)
+            k32.CloseHandle(handle)
+        elif error != ERROR_ALREADY_EXISTS:
+            return True      # the mutex could not be created at all (e.g. access denied): do not block start-up
         if time.monotonic() >= deadline:
             return False
         time.sleep(0.25)

@@ -50,6 +50,7 @@ from core.i18n import tr
 from core.players import steam_profile_url
 from core.points_manager import PointsManager
 from ui.color_picker import open_safe_color_dialog
+from ui.screen_utils import has_saved_position, screen_geometry_for
 
 log = logging.getLogger("scum.map")
 
@@ -304,10 +305,10 @@ class MapCanvasWidget(QWidget):
 
         # Subscribe to point updates
         self.points_mgr.point_added.connect(self._on_point_added)
-        self.points_mgr.point_updated.connect(lambda _: self.update())
-        self.points_mgr.point_deleted.connect(lambda _: self.update())
+        self.points_mgr.point_updated.connect(lambda _: self._forget_hover())
+        self.points_mgr.point_deleted.connect(lambda _: self._forget_hover())
         self.points_mgr.points_cleared.connect(lambda: self.update())
-        self.points_mgr.points_reloaded.connect(lambda: self.update())
+        self.points_mgr.points_reloaded.connect(self._forget_hover)
 
     def _load_base_maps(self):
         candidates = []
@@ -500,7 +501,7 @@ class MapCanvasWidget(QWidget):
 
         cur_cat = getattr(point, "category", "default")
         cat_info = get_category_info(cur_cat)
-        title_act = menu.addAction(f"{cat_info['emoji']} {point.name} [{point.sector} {point.keypad}]")
+        title_act = menu.addAction(f"{cat_info['emoji']} {point.name.replace('&', '&&')} [{point.sector} {point.keypad}]")
         title_act.setEnabled(False)
         menu.addSeparator()
 
@@ -695,6 +696,15 @@ class MapCanvasWidget(QWidget):
             self._dragging = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
             event.accept()
+
+    def _forget_hover(self):
+        """A waypoint was renamed / edited / deleted: the hover card and tooltip show old data, drop them."""
+        self._hover_id = None
+        self._card_point_id = None
+        if self._card.isVisible() and not self._card.is_under_mouse():
+            self._card.hide()
+        QToolTip.hideText()
+        self.update()
 
     def _hide_card(self):
         if self._card.isVisible() and self._card.is_under_mouse():
@@ -973,6 +983,15 @@ class MapWindow(QWidget):
         self.init_ui()
         self.apply_config_geometry()
 
+    def set_on_top(self, on_top: bool):
+        """Apply "keep on top of the game" immediately (the flags used to be read only at construction)."""
+        if bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) == bool(on_top):
+            return
+        visible = self.isVisible()
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, bool(on_top))
+        if visible:
+            self.show()                                    # changing flags hides the window
+
     def init_window_flags(self):
         flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
         if self.cfg.get("map_on_top", True):
@@ -1185,22 +1204,17 @@ class MapWindow(QWidget):
         super().mouseReleaseEvent(event)
 
     def apply_config_geometry(self):
-        screen = QApplication.primaryScreen()
-        screen_geo = screen.availableGeometry() if screen else None
-        sw = screen_geo.width() if screen_geo else 1920
-        sh = screen_geo.height() if screen_geo else 1080
-        sx = screen_geo.x() if screen_geo else 0
-        sy = screen_geo.y() if screen_geo else 0
-
         w = self.cfg.get("map_width", 960)
         h = self.cfg.get("map_height", 660)
         saved_x = self.cfg.get("map_x", -1)
         saved_y = self.cfg.get("map_y", -1)
+        screen_geo = screen_geometry_for(saved_x, saved_y, w, h)
+        sw, sh, sx, sy = screen_geo.width(), screen_geo.height(), screen_geo.x(), screen_geo.y()
 
         w = max(self.minimumSizeHint().width(), 500, min(w, sw - 40))
         h = max(self.minimumSizeHint().height(), 400, min(h, sh - 40))
 
-        if saved_x is None or saved_x < 0 or saved_y is None or saved_y < 0:
+        if not has_saved_position(saved_x, saved_y):
             x = sx + (sw - w) // 2
             # Shift slightly up so the points list fits below
             y = sy + max(20, (sh - h - 250) // 2)

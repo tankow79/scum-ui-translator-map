@@ -32,6 +32,11 @@ from ui.settings_widgets import Section, WrapCheck, make_button, muted_label
 log = logging.getLogger("scum.settings_tabs")
 
 
+def _profile_error_text(exc: Exception) -> str:
+    code = getattr(exc, "code", "")
+    return tr(f"settings.profile_err_{code}", default=str(exc)) if code else str(exc)
+
+
 class LanguageSelector(Section):
     """Interface language picker. Scales to any number of installed locales."""
 
@@ -166,6 +171,7 @@ class HistorySection(Section):
 class ProfilesTab(QWidget):
     """Create, apply, update, rename and delete named presets of the chat/HUD settings."""
     profile_applied = pyqtSignal()
+    profiles_changed = pyqtSignal()    # created / renamed: the tray menu lists them
     # Emitted just before a snapshot is taken so the dialog can flush unsaved widget values.
     snapshot_requested = pyqtSignal()
 
@@ -236,9 +242,10 @@ class ProfilesTab(QWidget):
         try:
             created = self.profiles.create(name)
         except ValueError as exc:
-            QMessageBox.warning(self, tr("settings.profiles_title"), str(exc))
+            QMessageBox.warning(self, tr("settings.profiles_title"), _profile_error_text(exc))
             return
         self._reload()
+        self.profiles_changed.emit()
         self._say(tr("settings.profile_created", profile=created))
 
     def _save_into(self):
@@ -258,9 +265,10 @@ class ProfilesTab(QWidget):
         try:
             self.profiles.rename(name, new)
         except ValueError as exc:
-            QMessageBox.warning(self, tr("settings.profiles_title"), str(exc))
+            QMessageBox.warning(self, tr("settings.profiles_title"), _profile_error_text(exc))
             return
         self._reload()
+        self.profiles_changed.emit()
 
     def _delete(self):
         name = self._selected()

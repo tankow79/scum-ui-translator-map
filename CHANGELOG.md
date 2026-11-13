@@ -5,6 +5,38 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [2.4.2] - 2026-11-13
+
+### Fixed
+- **Clear-all-waypoints confirmation redesigned:** a tidy dialog with a warning icon, bold heading, muted explanation, the confirmation tick and right-aligned buttons (the text no longer drifts to the right).
+- **Global hotkeys no longer fire outside the game:** F8 / F9 / Ctrl+M / Escape pressed in a browser or an editor used to open the map, unlock the overlay or hide windows. The chat key `T` no longer opens the chat while you type the letter in the map search or a settings field, and Escape no longer closes Settings from underneath a hotkey-recording button.
+- Deleted or renamed waypoints no longer come back when the game log is replayed at start-up (deleted chat lines are remembered).
+- Pressing Enter in the quick chat could copy the translation of the previous text, and froze the overlay on a bad connection; it now waits for the translation of the current text in the background.
+- Overlay, map, waypoint list and the ON/OFF badge keep their position on a second monitor (also one left of the main monitor) instead of jumping to the main one; the overlay can no longer be smaller than its content (the quick-chat bar was cut off at the edge) and is fully repainted after every mode change.
+- The waypoint list always stays above the map.
+- Settings: conflicting or reserved hotkeys are refused with a message; hotkeys are recorded by physical key (Ukrainian layout, numpad, F13+); holding a key no longer repeats the action; the keyboard hook is restarted if Windows drops it; "keep on top" and "keep history" apply immediately; switching a profile from the tray while Settings is open no longer lets Save overwrite it; created / renamed profiles appear in the tray menu; profile errors are translated; hand-edited numbers in `profiles.json` can no longer crash Settings; "Map only" no longer leaves the overlay unlocked.
+- Players: a new game session whose `SCUM.log` is already bigger than the previous one is read from its start (it used to be skipped).
+- Imported waypoints get their pin position and sector from the game coordinates (minimal or edited files no longer show sector `??`); points exactly on a grid line stay in their own sector.
+- CSV export neutralises spreadsheet formulas coming from other players' names and messages.
+- Unnamed waypoints show the placeholder instead of the word "None"; the map hover card no longer shows stale data after an edit; `&` in names displays correctly; a second copy of the program cannot start by mistake or damage the running app's settings.
+- **A log line with thousands of spaces froze the log reader for ~20 s** (regex backtracking in the `Message from user:` parser); it now parses from the right in linear time.
+- Damaged or hand-edited waypoints (NaN / infinite / absurd coordinates, wrong types, a non-text id) are repaired or skipped instead of reaching the map; imports reject waypoints without a usable position.
+- Translation replies are validated: an empty, non-text, 2 MB or otherwise nonsensical answer (or a bogus language code) falls back to the original message and is never cached.
+- Offline / dead connection: a message spends at most 7 s on the network, after repeated failures the app stops trying for a few seconds (growing to 60 s) and shows originals immediately; the chat keeps its order during an outage.
+- A configured Google API key is sent in a header, not in the URL, so it can no longer end up in log files.
+- Update check: a captive portal / proxy page, a dropped connection, HTTP 429 or an oversized reply give a plain message (localized) instead of raw technical text.
+- When the program folder is read-only (Program Files, a protected drive) settings and waypoints are kept in `%LOCALAPPDATA%\SCUM_Chat_Translator` instead of being lost at every restart.
+- Translations no longer garble coordinates (`-100000.500` became `-100000,500`); the `{X= Y= Z=}` block is always kept exactly.
+- Waypoint list stays above the map when the map is clicked (it is now owned by the map window); chat-made point names no longer contain a double space.
+- During a burst of messages the chat stays in order: a message waiting in the translation queue no longer counts as "too slow".
+- Concurrent saves of `config.json` could, rarely, write an older snapshot last and lose a setting.
+- The test-suite no longer needs the network (translation requests are faked), so it is deterministic.
+
+### Added
+- **Chat abbreviations** (`GG`, `GGNT`, `GL HF`, `BRB`, `AFK`, `KOS`, `ty`, Cyrillic `гг`, `спс` ... about 350 of them): shown with their full meaning in the chat language (`GGNT` -> "Гарна гра, непогана спроба"). Settings -> Chat lets you translate them, show the English meaning, or leave them as typed. Ambiguous short ones (`ty`, `u`, `np`...) are expanded only when the whole message is made of abbreviations, so Polish "ty" is never turned into "thank you".
+- Overlay: when you scroll up and new messages arrive, the chat no longer jumps; a "New messages" button appears at the bottom centre instead. Closing the chat returns to the newest messages. Text can be selected and copied without the chat being rebuilt under it.
+- Points: "Clear" now needs a tick box and an explicit "Yes, I confirm the deletion".
+
 ## [2.4.1] - 2026-11-13
 
 ### Fixed

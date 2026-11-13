@@ -67,6 +67,8 @@ def parse_hotkey_string(hotkey_str: str) -> Optional[Tuple[bool, bool, bool, int
         else:
             if p in NAME_TO_VK:
                 target_vk = NAME_TO_VK[p]
+            elif p.startswith("vk_") and p[3:].isdigit() and 0 < int(p[3:]) < 256:
+                target_vk = int(p[3:])       # keys without a name of their own (numpad, F13, Pause ...) are stored as VK_<n>
             elif len(p) == 1 and ('a' <= p <= 'z' or '0' <= p <= '9'):
                 target_vk = ord(p.upper())
 
@@ -100,13 +102,20 @@ class GlobalHotkeyManager:
         self._listener: Optional[keyboard.Listener] = None
         self._lock = threading.Lock()
         self._active = False
+        self._held: set = set()      # keys physically held down, to ignore the keyboard auto-repeat
 
-    def register(self, hotkey_str: str, callback: Callable[[], None]):
+    def register(self, hotkey_str: str, callback: Callable[[], None]) -> bool:
+        """Bind a hotkey. Returns False (and logs why) when the string cannot be read or is already taken."""
         parsed = parse_hotkey_string(hotkey_str)
-        if parsed:
-            with self._lock:
-                self._handlers[parsed] = callback
-                log.info("Registered hotkey: %s -> %s", hotkey_str, parsed)
+        if not parsed:
+            log.warning("Hotkey %r cannot be read and was not registered", hotkey_str)
+            return False
+        with self._lock:
+            if parsed in self._handlers:
+                log.warning("Hotkey %r is already used by another action; the new binding replaces it", hotkey_str)
+            self._handlers[parsed] = callback
+            log.info("Registered hotkey: %s -> %s", hotkey_str, parsed)
+        return True
 
     def clear(self):
         with self._lock:
@@ -116,9 +125,22 @@ class GlobalHotkeyManager:
         if self._active:
             return
         self._active = True
-        self._listener = keyboard.Listener(on_press=self._on_press)
+        self._held.clear()
+        self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
         self._listener.daemon = True
         self._listener.start()
+
+    def ensure_alive(self) -> bool:
+        """Restart the keyboard listener if Windows or an error ended it (hotkeys would silently stop working)."""
+        if not self._active:
+            return False
+        listener = self._listener
+        if listener is not None and listener.is_alive():
+            return False
+        log.warning("The keyboard listener had stopped; restarting it")
+        self._active = False
+        self.start()
+        return True
 
     def stop(self):
         self._active = False
@@ -141,6 +163,12 @@ class GlobalHotkeyManager:
         if vk in (VK_CONTROL, 162, 163, VK_SHIFT, 160, 161, VK_MENU, 164, 165):
             return
 
+        # A held key repeats ~30 times a second: act on the first press only. (If the release was ever missed the
+        # key is no longer physically down, so a fresh press is recognised again.)
+        if vk in self._held and user32.GetAsyncKeyState(vk) & 0x8000:
+            return
+        self._held.add(vk)
+
         # Poll the real modifier state via WinAPI GetAsyncKeyState
         is_ctrl = bool(user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
         is_alt = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
@@ -156,3 +184,8 @@ class GlobalHotkeyManager:
                 handler()
             except Exception as e:
                 log.error("Hotkey handler failed: %s", e)
+
+    def _on_release(self, key):
+        vk = key_to_vk(key)
+        if vk is not None:
+            self._held.discard(vk)

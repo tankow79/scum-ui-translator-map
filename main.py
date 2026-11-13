@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sys
@@ -9,10 +10,16 @@ from typing import Optional
 
 from PyQt6.QtCore import QRect, Qt, QTimer
 from PyQt6.QtGui import QAction, QBrush, QColor, QIcon, QPainter, QPixmap
-from PyQt6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QMenu,
+    QMessageBox,
+    QSystemTrayIcon,
+)
 
 from core.chat_history import ChatHistory
-from core.config_manager import ConfigManager
+from core.config_manager import ConfigManager, get_portable_config_path
 from core.controller import AppController
 from core.coordinate_parser import parse_chat_coordinate  # noqa: F401  (kept for plugins/tests)
 from core.hotkey_manager import GlobalHotkeyManager
@@ -91,7 +98,13 @@ def _tell_already_running():
     try:
         import ctypes
 
-        LocalizationManager.get_instance().set_locale(ConfigManager().get("ui_language", "en"))
+        language = "en"
+        try:      # read-only peek: a full ConfigManager could quarantine the running app's config during its write
+            with open(get_portable_config_path("config.json"), encoding="utf-8") as f:
+                language = str(json.load(f).get("ui_language", "en"))
+        except (OSError, ValueError, AttributeError):
+            pass
+        LocalizationManager.get_instance().set_locale(language)
         ctypes.windll.user32.MessageBoxW(0, tr("tray.already_running"), tr("tray.tooltip", version=__version__), 0x40)
     except Exception:
         logging.getLogger("scum").exception("Could not show the already-running notice")
@@ -227,14 +240,15 @@ def _run():
     player_registry = PlayerRegistry()
     points_mgr = PointsManager(registry=player_registry)
     map_win = MapWindow(cfg, points_mgr)
-    points_win = PointsWindow(cfg, points_mgr)
+    points_win = PointsWindow(cfg, points_mgr, parent=map_win)
 
     # Link between the waypoints list window and the map
     points_win.point_focus_requested.connect(map_win.focus_point)
     map_win.point_selected.connect(map_win.focus_point)
 
     def on_coordinate_detected(pt):
-        points_mgr.add_point(pt)
+        if not points_mgr.add_point(pt):
+            return      # a duplicate, or a point the user deleted (the log is replayed at every start)
         log.info("New waypoint from chat: %s [%s] %s", pt.name, pt.sector, pt.raw_coord)
         # If the map is open and auto-focus is enabled
         if map_win.isVisible() and cfg.get("auto_focus_new_point", True):
@@ -290,7 +304,11 @@ def _run():
     map_win.closed.connect(on_map_window_closed)
     points_win.closed.connect(on_points_window_closed)
 
-    controller.hotkey_toggle_map.connect(toggle_map_and_points)
+    def on_map_hotkey():
+        if is_game_foreground("scum", allow_own_process=True):
+            toggle_map_and_points()
+
+    controller.hotkey_toggle_map.connect(on_map_hotkey)
     overlay.open_map_requested.connect(toggle_map_and_points)
 
     settings_dialog = SettingsDialog(cfg, profiles=profiles, players=player_registry)
@@ -299,8 +317,13 @@ def _run():
     controller.translated_ready.connect(overlay.add_message)
     overlay.open_settings_requested.connect(settings_dialog.show)
 
+    def game_or_ours_in_front() -> bool:
+        """Global hotkeys act only while SCUM (or one of our own windows) is the active window: F8 / F9 / Ctrl+M
+        pressed in a browser or a text editor must not open windows or rewrite the settings."""
+        return is_game_foreground("scum", allow_own_process=True)
+
     def on_toggle_lock():
-        if not cfg.get("enable_chat_translator", True):
+        if not cfg.get("enable_chat_translator", True) or not game_or_ours_in_front():
             return
         overlay.toggle_lock()
         status_badge.set_locked(overlay.is_locked)
@@ -316,7 +339,9 @@ def _run():
         # Chat key (T) reacts ONLY inside the SCUM window and when the translator is enabled
         if not cfg.get("enable_chat_translator", True):
             return
-        if not is_game_foreground("scum", allow_own_process=True):
+        # Only the game itself: with our own windows allowed, typing the letter "t" in the map search or in a
+        # settings field would open the chat and steal the rest of the word.
+        if not is_game_foreground("scum", allow_own_process=False):
             return
 
         nonlocal last_chat_open_time
@@ -330,6 +355,11 @@ def _run():
             overlay.set_in_chat_mode(True)
 
     def on_escape_pressed():
+        if not game_or_ours_in_front():
+            return      # Escape in a browser or another program is not ours
+        active = QApplication.activeWindow()
+        if QApplication.activeModalWidget() is not None or isinstance(active, QDialog):
+            return      # a dialog (Settings, a message box, hotkey recording ...) handles Escape itself
         # Check whether any of our windows is open
         windows_open = (
             overlay.in_chat_mode or
@@ -368,7 +398,7 @@ def _run():
     controller.hotkey_enter_pressed.connect(on_enter_pressed)
 
     def toggle_overlay_visibility():
-        if not cfg.get("enable_chat_translator", True):
+        if not cfg.get("enable_chat_translator", True) or not game_or_ours_in_front():
             return
         nonlocal is_overlay_enabled_by_user
         is_overlay_enabled_by_user = not is_overlay_enabled_by_user
@@ -405,6 +435,11 @@ def _run():
 
     update_registered_hotkeys()
     hotkey_manager.start()
+
+    # If Windows drops the low-level keyboard hook (or its thread dies) the hotkeys would stay dead until restart
+    hotkey_watchdog = QTimer()
+    hotkey_watchdog.timeout.connect(hotkey_manager.ensure_alive)
+    hotkey_watchdog.start(5000)
 
     # Smart background monitoring of the SCUM game (every 500 ms)
     # If the game is minimized or closed, the overlay and status badge are hidden
@@ -468,6 +503,10 @@ def _run():
             target_lang=cfg.get("target_language", "uk"),
             source_lang=cfg.get("source_language", "auto")
         )
+        history.set_path(os.path.join(get_user_data_dir(), "chat_history.jsonl")
+                         if cfg.get("history_save_to_disk", True) else None)
+        map_win.set_on_top(cfg.get("map_on_top", True))
+        points_win.set_on_top(cfg.get("map_on_top", True))
         overlay.update_style()
         map_win.canvas.set_variant(cfg.get("map_variant", "regular"))
         map_win.canvas.toggle_grid(cfg.get("map_show_grid", True))
@@ -481,6 +520,12 @@ def _run():
 
         enable_chat = cfg.get("enable_chat_translator", True)
         if not enable_chat:
+            # "Map only": the overlay must not stay unlocked / in chat mode (F9 is ignored in this mode, and the
+            # game-window monitor would stop hiding the map when the game is minimised)
+            overlay.set_in_chat_mode(False)
+            if not overlay.is_locked:
+                overlay.set_locked(True)
+                status_badge.set_locked(True)
             if overlay.isVisible():
                 overlay.hide()
             if status_badge.isVisible():
@@ -678,6 +723,10 @@ def _run():
 
     def switch_profile(name: str):
         if profiles.apply(name):
+            if settings_dialog.isVisible():
+                # An open Settings window still shows the old profile; saving it would overwrite the new one
+                settings_dialog.load_settings()
+                settings_dialog.tab_profiles._reload()
             on_settings_changed()
             rebuild_profiles_menu()
             tray.showMessage(tr("tray.profile_switched_title"), tr("tray.profile_switched", profile=name),

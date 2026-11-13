@@ -1,8 +1,9 @@
 from PyQt6.QtCore import QPoint, QRectF, Qt
 from PyQt6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPen
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QWidget
 
 from core.config_manager import ConfigManager
+from ui.screen_utils import has_saved_position, screen_geometry_for
 from utils.win_api import keep_on_top, set_click_through
 
 
@@ -46,23 +47,18 @@ class StatusBadge(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
 
     def apply_geometry(self):
-        screen = QApplication.primaryScreen()
-        screen_geo = screen.availableGeometry() if screen else None
-
-        screen_w = screen_geo.width() if screen_geo else 1920
-        screen_h = screen_geo.height() if screen_geo else 1080
-        screen_x = screen_geo.x() if screen_geo else 0
-        screen_y = screen_geo.y() if screen_geo else 0
-
         saved_x = self.cfg.get("status_badge_x", -1)
         saved_y = self.cfg.get("status_badge_y", -1)
+        screen_geo = screen_geometry_for(saved_x, saved_y, self.width(), self.height())
+        screen_w, screen_h = screen_geo.width(), screen_geo.height()
+        screen_x, screen_y = screen_geo.x(), screen_geo.y()
 
         # Safe default position:
         # Top right, inset from the corner (to avoid covering the game FPS counter and NVIDIA icon)
         default_x = screen_x + screen_w - self.width() - 140
         default_y = screen_y + 42
 
-        if saved_x is None or saved_x < 0 or saved_y is None or saved_y < 0:
+        if not has_saved_position(saved_x, saved_y):
             x = default_x
             y = default_y
         else:

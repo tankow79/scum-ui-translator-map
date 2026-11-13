@@ -5,6 +5,8 @@ from PyQt6.QtCore import QPoint, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFontMetrics, QKeyEvent, QMouseEvent, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -28,6 +30,7 @@ from core.coordinate_parser import POINT_CATEGORIES, MapPoint, get_category_info
 from core.i18n import tr
 from core.points_manager import PointsManager
 from ui.color_picker import open_safe_color_dialog
+from ui.screen_utils import has_saved_position, screen_geometry_for
 
 
 def _plain(text: str) -> str:
@@ -164,7 +167,7 @@ class PointRowWidget(QFrame):
         layout.addWidget(self.btn_color)
 
         # 5. Inline waypoint name editing
-        self.txt_name = QLineEdit(self.point.name)
+        self.txt_name = QLineEdit("" if self.point.name == "None" else self.point.name)   # unnamed: show the placeholder
         self.txt_name.setPlaceholderText(tr("points.name_placeholder"))
         self.txt_name.setToolTip(tr("points.tip_name"))
         self.txt_name.setStyleSheet("""
@@ -343,8 +346,9 @@ class PointRowWidget(QFrame):
         self.point = point
         self._update_color_button_style()
         self._update_category_button_style()
-        if self.txt_name.text() != point.name:
-            self.txt_name.setText(point.name)
+        shown = "" if point.name == "None" else point.name
+        if self.txt_name.text() != shown:
+            self.txt_name.setText(shown)
         if self.txt_players.text() != getattr(point, "players", ""):
             self.txt_players.setText(getattr(point, "players", ""))
         is_base = (getattr(point, "category", "default") == "base")
@@ -448,6 +452,90 @@ class PointRowWidget(QFrame):
         """)
 
 
+class ClearAllDialog(QDialog):
+    """Confirmation for "delete every waypoint": the red button works only after the check box is ticked."""
+
+    STYLE = """
+        QDialog { background-color: #0b0f19; }
+        QLabel#icon { font-size: 34px; color: #fbbf24; }
+        QLabel#heading { color: #f8fafc; font-size: 15px; font-weight: 700; }
+        QLabel#body { color: #94a3b8; font-size: 12px; }
+        QCheckBox { color: #e2e8f0; font-size: 12px; spacing: 8px; }
+        QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #475569; border-radius: 4px;
+                               background: #0f172a; }
+        QCheckBox::indicator:checked { background: #ef4444; border-color: #ef4444; }
+        QPushButton { background-color: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;
+                      padding: 7px 18px; font-size: 12px; font-weight: 600; }
+        QPushButton:hover { border-color: #38bdf8; }
+        QPushButton#danger { background-color: #b91c1c; border-color: #ef4444; color: #ffffff; }
+        QPushButton#danger:hover { background-color: #dc2626; }
+        QPushButton#danger:disabled { background-color: #1e293b; border-color: #334155; color: #64748b; }
+        QPushButton#safe { background-color: #0e7490; border-color: #38bdf8; color: #ffffff; }
+        QPushButton#safe:hover { background-color: #0891b2; }
+    """
+
+    def __init__(self, count: int, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint |
+                            Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowCloseButtonHint)
+        self.setWindowTitle(tr("points.title"))
+        self.setModal(True)
+        self.setMinimumWidth(460)
+        self.setStyleSheet(self.STYLE)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 20, 22, 18)
+        root.setSpacing(16)
+
+        top = QHBoxLayout()
+        top.setSpacing(16)
+        icon = QLabel("⚠")
+        icon.setObjectName("icon")
+        icon.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        icon.setFixedWidth(40)
+        top.addWidget(icon)
+
+        texts = QVBoxLayout()
+        texts.setSpacing(6)
+        heading = QLabel(tr("points.clear_heading", count=count))
+        heading.setObjectName("heading")
+        heading.setWordWrap(True)
+        body = QLabel(tr("points.clear_body"))
+        body.setObjectName("body")
+        body.setWordWrap(True)
+        texts.addWidget(heading)
+        texts.addWidget(body)
+        top.addLayout(texts, 1)
+        root.addLayout(top)
+
+        self.check = QCheckBox(tr("points.clear_check"))
+        root.addWidget(self.check)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(10)
+        buttons.addStretch(1)
+        self.btn_cancel = QPushButton(tr("points.clear_cancel"))
+        self.btn_cancel.setObjectName("safe")
+        self.btn_cancel.setDefault(True)
+        self.btn_yes = QPushButton(tr("points.clear_yes"))
+        self.btn_yes.setObjectName("danger")
+        self.btn_yes.setEnabled(False)
+        buttons.addWidget(self.btn_yes)
+        buttons.addWidget(self.btn_cancel)
+        root.addLayout(buttons)
+
+        self.check.toggled.connect(self.btn_yes.setEnabled)
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_yes.clicked.connect(self._confirm)
+
+    def _confirm(self):
+        if self.check.isChecked():
+            self.accept()
+
+    def confirmed(self) -> bool:
+        return self.result() == QDialog.DialogCode.Accepted and self.check.isChecked()
+
+
 class PointsWindow(QWidget):
     """
     Bottom window listing saved coordinates from the SCUM game chat:
@@ -459,8 +547,9 @@ class PointsWindow(QWidget):
     closed = pyqtSignal()
     point_focus_requested = pyqtSignal(object)  # MapPoint
 
-    def __init__(self, config_manager: ConfigManager, points_manager: PointsManager):
-        super().__init__()
+    def __init__(self, config_manager: ConfigManager, points_manager: PointsManager, parent=None):
+        # With the map window as its owner the list always stays above the map, however the map is clicked
+        super().__init__(parent)
         self.cfg = config_manager
         self.points_mgr = points_manager
         self._drag_pos = QPoint()
@@ -474,6 +563,15 @@ class PointsWindow(QWidget):
         self.apply_config_geometry()
         self._connect_signals()
         self.refresh_list()
+
+    def set_on_top(self, on_top: bool):
+        """Apply "keep on top of the game" immediately (the flags used to be read only at construction)."""
+        if bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) == bool(on_top):
+            return
+        visible = self.isVisible()
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, bool(on_top))
+        if visible:
+            self.show()                                    # changing flags hides the window
 
     def init_window_flags(self):
         flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
@@ -652,9 +750,14 @@ class PointsWindow(QWidget):
         count = len(self.points_mgr.get_points())
         if count == 0:
             return
-        answer = self._ask(tr("points.clear_confirm", count=count))
-        if answer == QMessageBox.StandardButton.Yes:
+        if self._ask_clear_all(count):
             self.points_mgr.clear_all()
+
+    def _ask_clear_all(self, count: int) -> bool:
+        """Double confirmation: the delete button stays disabled until the check box is ticked."""
+        dialog = ClearAllDialog(count, self)
+        dialog.exec()
+        return dialog.confirmed()
 
     def _ask(self, text: str):
         # The window may sit above the game: keep the dialog on top and do not steal focus rules.
@@ -754,7 +857,8 @@ class PointsWindow(QWidget):
             return  # a newer refresh replaced this one
         chunk, self._build_queue = self._build_queue[:size], self._build_queue[size:]
         for pt in chunk:
-            if pt.id not in self._deleted_ids and pt.id not in self._row_widgets:
+            if (pt.id not in self._deleted_ids and pt.id not in self._row_widgets
+                    and self.points_mgr.get_point_by_id(pt.id) is not None):   # still exists (deleted since the refresh?)
                 self._create_row_widget(pt, prepend=False)
         if self._build_queue:
             QTimer.singleShot(0, lambda g=generation: self._build_batch(g))
@@ -807,7 +911,7 @@ class PointsWindow(QWidget):
             players = getattr(pt, "players", "").lower()
             visible = (
                 not query or
-                query in pt.name.lower() or
+                query in ('' if pt.name == 'None' else pt.name.lower()) or
                 query in pt.sector.lower() or
                 query in pt.keypad.lower() or
                 query in cat_name or
@@ -826,7 +930,7 @@ class PointsWindow(QWidget):
         cat_name = get_category_label(cur_cat).lower()
         players = getattr(pt, "players", "").lower()
         visible = (
-            query in pt.name.lower() or
+            query in ('' if pt.name == 'None' else pt.name.lower()) or
             query in pt.sector.lower() or
             query in pt.keypad.lower() or
             query in cat_name or
@@ -857,22 +961,17 @@ class PointsWindow(QWidget):
         super().mouseReleaseEvent(event)
 
     def apply_config_geometry(self):
-        screen = QApplication.primaryScreen()
-        screen_geo = screen.availableGeometry() if screen else None
-        sw = screen_geo.width() if screen_geo else 1920
-        sh = screen_geo.height() if screen_geo else 1080
-        sx = screen_geo.x() if screen_geo else 0
-        sy = screen_geo.y() if screen_geo else 0
-
         w = self.cfg.get("points_width", 1000)
         h = self.cfg.get("points_height", 240)
         saved_x = self.cfg.get("points_x", -1)
         saved_y = self.cfg.get("points_y", -1)
+        screen_geo = screen_geometry_for(saved_x, saved_y, w, h)
+        sw, sh, sx, sy = screen_geo.width(), screen_geo.height(), screen_geo.x(), screen_geo.y()
 
         w = max(self.minimumSizeHint().width(), min(w, sw - 40))
         h = max(160, min(h, sh - 40))
 
-        if saved_x is None or saved_x < 0 or saved_y is None or saved_y < 0:
+        if not has_saved_position(saved_x, saved_y):
             # Center at the bottom of the monitor
             x = sx + (sw - w) // 2
             # Below the map

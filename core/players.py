@@ -6,6 +6,7 @@ nickname to a SteamID. The registry is filled automatically: all existing logs a
 """
 
 import glob
+import hashlib
 import json
 import logging
 import math
@@ -25,10 +26,11 @@ log = logging.getLogger("scum.players")
 
 STEAM_PROFILE_URL = "https://steamcommunity.com/profiles/{steam_id}"
 _STEAM_ID_RE = re.compile(r"(?<!\d)(7656119\d{10})(?!\d)")
-_USER_LINE_RE = re.compile(
-    r"\[(?P<time>\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}):\d+\]\[\s*\d+\]"
-    r"LogSCUM:\s*Message from user:\s*(?P<nick>.+?)\s*\((?P<sid>\d{17})\)\s*\(hash:\s*(?P<hash>[0-9A-Fa-f]+)\)"
+_USER_LINE_HEAD = re.compile(
+    r"\[(?P<time>\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}):\d+\]\[\s*\d+\]LogSCUM:\s*Message from user:"
 )
+_USER_LINE_SID = re.compile(r"\((?P<sid>\d{17})\)\s*$")
+_USER_LINE_HASH = re.compile(r"\s*(?P<hash>[0-9A-Fa-f]+)\)")
 FORMAT_VERSION = 2
 MAX_NICK_HISTORY = 50
 
@@ -50,14 +52,30 @@ def parse_user_line(line: str) -> Optional[Tuple[str, str, str, float]]:
     """(steam_id, nick, hash, epoch_utc) from a ``Message from user:`` log line, else None."""
     if "Message from user:" not in line:
         return None
-    m = _USER_LINE_RE.search(line)
-    if not m:
+    head = _USER_LINE_HEAD.search(line)
+    if not head:
+        return None
+    # Parsed from the right with anchored patterns: a nickname made of spaces or brackets must not make a
+    # single regex backtrack for seconds (the former one needed ~20 s for a line with 3000 spaces).
+    rest = line[head.end():]
+    cut = rest.rfind("(hash:")
+    if cut < 0:
+        return None
+    hash_match = _USER_LINE_HASH.fullmatch(rest[cut + len("(hash:"):].rstrip())
+    if not hash_match:
+        return None
+    before = rest[:cut].rstrip()
+    sid_match = _USER_LINE_SID.search(before)
+    if not sid_match:
+        return None
+    nick = before[:sid_match.start()].strip()
+    if not nick:
         return None
     try:
-        ts = datetime.strptime(m.group("time"), "%Y.%m.%d-%H.%M.%S").replace(tzinfo=timezone.utc).timestamp()
+        ts = datetime.strptime(head.group("time"), "%Y.%m.%d-%H.%M.%S").replace(tzinfo=timezone.utc).timestamp()
     except ValueError:
         ts = time.time()
-    return m.group("sid"), m.group("nick").strip(), m.group("hash").upper(), ts
+    return sid_match.group("sid"), nick, hash_match.group("hash").upper(), ts
 
 
 class PlayerRegistry(QObject):
@@ -82,6 +100,7 @@ class PlayerRegistry(QObject):
         self._lock = threading.RLock()
         self._players: Dict[str, dict] = {}
         self._scanned: Dict[str, int] = {}   # log file name -> bytes already read
+        self._heads: Dict[str, str] = {}     # log file name -> fingerprint of its first bytes (tells a new log from an old one)
         self.enabled = True                  # False: nothing is read from the logs or stored
         self.load()
 
@@ -114,7 +133,7 @@ class PlayerRegistry(QObject):
 
     def load(self):
         with self._lock:
-            self._players, self._scanned = {}, {}
+            self._players, self._scanned, self._heads = {}, {}, {}
             if not os.path.exists(self.file_path):
                 return
             try:
@@ -134,13 +153,17 @@ class PlayerRegistry(QObject):
             scanned = data.get("scanned_logs")
             if isinstance(scanned, dict):
                 self._scanned = {str(k): int(v) for k, v in scanned.items() if isinstance(v, int)}
+            heads = data.get("scanned_heads")
+            if isinstance(heads, dict):
+                self._heads = {str(k): str(v) for k, v in heads.items() if isinstance(v, str)}
 
     def save(self):
         with self._lock:
             try:
                 atomic_write_json(
                     self.file_path,
-                    {"version": FORMAT_VERSION, "players": self._players, "scanned_logs": self._scanned},
+                    {"version": FORMAT_VERSION, "players": self._players, "scanned_logs": self._scanned,
+                     "scanned_heads": self._heads},
                 )
             except OSError as e:
                 log.error("Could not save %s: %s", self.file_path, e)
@@ -203,7 +226,11 @@ class PlayerRegistry(QObject):
             try:
                 size = os.path.getsize(path)
                 start = self._scanned.get(name, 0)
-                if size < start:  # the file was replaced (game restart reuses SCUM.log)
+                with open(path, "rb") as probe:
+                    head = hashlib.sha1(probe.read(256)).hexdigest()
+                # The game reuses the name SCUM.log for every session: a file that starts differently from the one
+                # we read before is a new log (even if it is already bigger) and must be read from its beginning.
+                if size < start or self._heads.get(name) != head:
                     start = 0
                 if size == start:
                     continue
@@ -222,6 +249,7 @@ class PlayerRegistry(QObject):
                         self.observe(sid, nick, hash_value, ts, silent=True)
                 with self._lock:
                     self._scanned[name] = size
+                    self._heads[name] = head
                 read_files += 1
             except OSError as e:
                 log.warning("Could not scan %s: %s", path, e)
@@ -234,7 +262,7 @@ class PlayerRegistry(QObject):
     def rescan_all(self, log_path: str) -> int:
         """Forget which log bytes were read and scan every current and old log again."""
         with self._lock:
-            self._scanned = {}
+            self._scanned, self._heads = {}, {}
         return self.scan_logs(log_path)
 
     # ── reading ──────────────────────────────────────────────────────

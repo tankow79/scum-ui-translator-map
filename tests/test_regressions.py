@@ -1,6 +1,7 @@
 """Regression tests for bugs found in the hard-debugging pass (one test per defect class)."""
 
 import json
+import math
 import os
 import re
 import subprocess
@@ -10,7 +11,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 
 from core.chat_history import ChatHistory
 from core.config_manager import ConfigManager
@@ -353,6 +355,7 @@ def test_a_hanging_translation_does_not_block_the_chat(tmp_path):
     shown = []
     ctrl._publish = lambda *a: shown.append(a[2])
     stuck, quick = ctrl._take_ticket(), ctrl._take_ticket()
+    ctrl._started_times[stuck] = time.monotonic()         # its translation is running (and hangs)
     ctrl._publish_in_order(quick, "t", "B", "quick", "x", "en", "player")
     assert shown == []
     assert _wait(lambda: shown == ["quick"], 3.0)         # released by the timer after the wait limit
@@ -874,3 +877,480 @@ def test_points_list_builds_big_imports_in_batches_without_losing_rows(tmp_path)
     app.processEvents()
     assert win._row_widgets == {} and win._build_queue == []
     win.close()
+
+
+def test_clear_all_points_needs_explicit_confirmation(tmp_path, monkeypatch):
+    from ui.points_window import PointsWindow
+
+    mgr = PointsManager(str(tmp_path / "p.json"))
+    mgr.add_point(MapPoint(id="1", name="a", date_time="", raw_coord="{X=1 Y=1 Z=1}", x=1, y=1, z=1, sector="B2",
+                           keypad="k5", norm_x=.5, norm_y=.5, created_timestamp=1.0))
+    win = PointsWindow(ConfigManager(str(tmp_path / "cfg.json")), mgr)
+    monkeypatch.setattr(win, "_ask_clear_all", lambda count: False)
+    win._confirm_clear_all()
+    assert len(mgr.get_points()) == 1                      # cancelled: nothing is deleted
+    monkeypatch.setattr(win, "_ask_clear_all", lambda count: True)
+    win._confirm_clear_all()
+    assert mgr.get_points() == []
+    win.close()
+
+
+def test_overlay_keeps_the_readers_place_and_offers_a_jump_button(tmp_path):
+    from ui.overlay import ChatOverlay
+
+    overlay = ChatOverlay(ConfigManager(str(tmp_path / "cfg.json")))
+    overlay.resize(500, 300)
+    overlay.show()
+    overlay.set_in_chat_mode(True)
+    for i in range(40):
+        overlay.add_message("12:00:00", "Bob", f"message number {i}", f"message number {i}", "en", "player")
+    app.processEvents()
+    view = overlay.chat_view
+    bar = view.verticalScrollBar()
+    assert bar.maximum() > 0 and view.at_bottom() and not view.jump_button.isVisible()
+
+    bar.setValue(20)                                   # the reader scrolls up
+    overlay.add_message("12:00:01", "Bob", "brand new", "brand new", "en", "player")
+    app.processEvents()
+    assert bar.value() == 20                           # no jump
+    assert view.jump_button.isVisible()                # but a button appears
+
+    view.jump_button.click()
+    assert view.at_bottom() and not view.jump_button.isVisible()
+
+    bar.setValue(20)
+    overlay.add_message("12:00:02", "Bob", "another", "another", "en", "player")
+    assert view.jump_button.isVisible()
+    overlay.set_in_chat_mode(False)                    # closing the chat returns to the newest messages
+    assert view.at_bottom() and not view.jump_button.isVisible()
+    overlay.close()
+
+
+def test_concurrent_point_saves_leave_the_latest_state_on_disk(tmp_path):
+    import threading
+
+    path = tmp_path / "points.json"
+    mgr = PointsManager(str(path))
+
+    def worker(n):
+        for i in range(25):
+            mgr.add_point(MapPoint(id=f"{n}_{i}", name="p", date_time="", raw_coord=f"{{X={i} Y={n} Z=1}}", x=i, y=n, z=1,
+                                   sector="B2", keypad="k5", norm_x=.5, norm_y=.5, created_timestamp=float(n * 100 + i)))
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(json.loads(path.read_text(encoding="utf-8"))) == len(mgr.get_points()) == 100
+
+
+def test_translation_keeps_coordinates_untouched(monkeypatch):
+    from core.translator import GoogleTranslatorEngine
+
+    eng = GoogleTranslatorEngine(target_lang="uk")
+    original = "Hier ist die Basis {X=-100000.500 Y=-50000.250 Z=1200.000} kommt alle"
+    monkeypatch.setattr(eng, "_translate_with_fallbacks",
+                        lambda text, target, source: ("Тут база {X=-100000,500 Y=-50000,250 Z=1200,000} приходьте", "de"))
+    assert eng.translate(original) == ("Тут база {X=-100000.500 Y=-50000.250 Z=1200.000} приходьте", "de")
+
+
+def test_point_name_has_no_double_spaces_where_the_coordinates_were():
+    from core.coordinate_parser import parse_chat_coordinate
+
+    pt = parse_chat_coordinate("Hier ist die Basis {X=-100000.500 Y=-50000.250 Z=1200.000} kommt alle")
+    assert pt is not None and pt.name == "Hier ist die Basis kommt alle"
+
+
+def test_points_window_is_owned_by_the_map_so_it_stays_above(tmp_path):
+    from ui.map_window import MapWindow
+    from ui.points_window import PointsWindow
+
+    cfg = ConfigManager(str(tmp_path / "cfg.json"))
+    mgr = PointsManager(str(tmp_path / "p.json"))
+    map_win = MapWindow(cfg, mgr)
+    points_win = PointsWindow(cfg, mgr, parent=map_win)
+    assert points_win.parent() is map_win and points_win.isWindow()
+    map_win.close()
+
+
+def test_messages_waiting_in_a_long_queue_keep_their_order(tmp_path):
+    from core.controller import AppController
+
+    cfg = ConfigManager(str(tmp_path / "cfg.json"))
+    ctrl = AppController(cfg, GoogleTranslatorEngine(target_lang="uk"))
+    ctrl.ORDER_WAIT_SECONDS = 0.2
+    shown = []
+    ctrl._publish = lambda *a: shown.append(a[2])
+    tickets = [ctrl._take_ticket() for _ in range(5)]     # a burst: all queued, none started yet
+    time.sleep(0.5)                                        # longer than the wait limit, but only spent in the queue
+    for n in (4, 2, 3):                                    # later ones finish first
+        ctrl._publish_in_order(tickets[n], "t", "x", f"m{n}", "x", "en", "player")
+    assert shown == []                                     # still waiting for the earlier, not yet started ones
+    for n in (0, 1):
+        ctrl._publish_in_order(tickets[n], "t", "x", f"m{n}", "x", "en", "player")
+    assert shown == ["m0", "m1", "m2", "m3", "m4"]
+
+
+def test_user_line_parsing_is_linear_and_exact():
+    from core.players import parse_user_line
+
+    head = "[2026.11.13-10.00.00:123][  1]LogSCUM: Message from user: "
+    for hostile in (" " * 20000, "(" * 20000, "x " * 10000, "(hash: " * 3000):
+        t0 = time.perf_counter()
+        parse_user_line(head + hostile)
+        assert time.perf_counter() - t0 < 0.5
+    sid = "76561198000000001"
+    assert parse_user_line(f"{head}Bob (the great) ({sid}) (hash: ab12)")[:3] == (sid, "Bob (the great)", "AB12")
+    assert parse_user_line(f"{head}a:b ({sid}) (hash: AB)")[1] == "a:b"
+    assert parse_user_line(f"{head} ({sid}) (hash: AB)") is None                 # no nickname
+    assert parse_user_line(f"{head}Bob (1234) (hash: AB)") is None               # not a SteamID
+    assert parse_user_line(f"{head}Bob ({sid}) (hash: XYZ)") is None             # not hex
+
+
+def test_stored_waypoints_with_damaged_numbers_are_repaired_or_rejected():
+    from core.coordinate_parser import MapPoint
+
+    pt = MapPoint.from_dict({"id": 7, "name": ["x"], "x": 1000, "y": 2000, "norm_x": float("nan"), "norm_y": 1e300,
+                             "color": "red<script>", "category": {"a": 1}, "created_timestamp": float("inf"), "players": 5})
+    assert pt.id == "7" and pt.name == "None" and pt.color.startswith("#") and len(pt.color) == 7
+    assert -10 <= pt.norm_x <= 10 and -10 <= pt.norm_y <= 10
+    assert math.isfinite(pt.created_timestamp) and pt.players == "5"
+    for bad in ({"x": float("nan"), "y": 1}, {"x": 1}, {"x": "abc", "y": 1}, "junk", None):
+        with pytest.raises(ValueError):
+            MapPoint.from_dict(bad)
+
+
+# ───────── tests added after mutation testing (each one kills a mutant that used to survive) ─────────
+
+def test_nickname_containing_the_hash_marker_is_still_parsed_from_the_right():
+    from core.players import parse_user_line
+
+    sid = "76561198000000001"
+    line = f"[2026.11.13-10.00.00:123][  1]LogSCUM: Message from user: evil (hash: AA) ({sid}) (hash: BEEF)"
+    assert parse_user_line(line)[:3] == (sid, "evil (hash: AA)", "BEEF")
+
+
+def test_negative_or_odd_asset_sizes_become_zero():
+    import core.updater as updater
+
+    for size in (-5, "-7", None, float("nan"), [1]):
+        info = updater.parse_release({"tag_name": "v9.9.9", "assets": [
+            {"name": "SCUM_Chat_Translator.exe", "size": size,
+             "browser_download_url": "https://github.com/a/b/releases/download/v9.9.9/SCUM_Chat_Translator.exe"}]},
+            "2.4.0", portable=False)
+        assert info.asset_size == 0
+
+
+def test_a_stale_snapshot_never_overwrites_a_newer_config(tmp_path, monkeypatch):
+    import threading
+
+    import core.config_manager as cm
+
+    real_write = cm.atomic_write_json
+    first_call = threading.Event()
+
+    def slow_first_write(path, data):
+        if not first_call.is_set():
+            first_call.set()
+            time.sleep(0.4)                       # the first writer is slow, a second save overtakes it
+        real_write(path, data)
+
+    monkeypatch.setattr(cm, "atomic_write_json", slow_first_write)
+    cfg = ConfigManager(str(tmp_path / "config.json"))
+    first_call.clear()
+    t1 = threading.Thread(target=lambda: cfg.set("font_size", 21))
+    t1.start()
+    assert _wait(first_call.is_set, 3)
+    cfg.set("font_size", 33)                      # newer value, saved while the older save is still in flight
+    t1.join()
+    assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))["font_size"] == 33
+
+
+def test_selected_text_in_the_chat_survives_new_messages(tmp_path):
+    from ui.overlay import ChatOverlay
+
+    overlay = ChatOverlay(ConfigManager(str(tmp_path / "cfg.json")))
+    overlay.resize(500, 300)
+    overlay.show()
+    overlay.set_in_chat_mode(True)
+    for i in range(40):
+        overlay.add_message("12:00:00", "Bob", f"message number {i}", f"message number {i}", "en", "player")
+    app.processEvents()
+    view = overlay.chat_view
+    view.verticalScrollBar().setValue(10)
+    cursor = view.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(15, cursor.MoveMode.KeepAnchor)
+    view.setTextCursor(cursor)
+    assert view.textCursor().hasSelection()
+    overlay.add_message("12:00:01", "Bob", "brand new", "brand new", "en", "player")
+    app.processEvents()
+    assert view.textCursor().hasSelection()       # the document was not rebuilt under the selection
+    assert view.jump_button.isVisible()
+    overlay.close()
+
+
+@pytest.mark.parametrize("tick,click_yes,expected", [(True, True, True), (False, True, False), (True, False, False)])
+def test_clearing_all_points_needs_the_tick_and_the_yes_button(tmp_path, monkeypatch, tick, click_yes, expected):
+    from ui.points_window import ClearAllDialog, PointsWindow
+
+    win = PointsWindow(ConfigManager(str(tmp_path / "cfg.json")), PointsManager(str(tmp_path / "p.json")))
+
+    def fake_exec(dialog):
+        dialog.check.setChecked(tick)
+        (dialog.btn_yes if click_yes else dialog.btn_cancel).click()      # a disabled button ignores the click
+        return dialog.result()
+
+    monkeypatch.setattr(ClearAllDialog, "exec", fake_exec)
+    assert win._ask_clear_all(3) is expected
+    win.close()
+
+
+@pytest.mark.parametrize("lang", ["en", "uk"])
+def test_clear_dialog_is_laid_out_neatly(lang):
+    """Icon on the left, heading and text left-aligned right of it, buttons on the right, nothing clipped."""
+    from core.i18n import LocalizationManager
+    from ui.points_window import ClearAllDialog
+
+    LocalizationManager.get_instance().set_locale(lang)
+    dialog = ClearAllDialog(1234)
+    dialog.show()
+    app.processEvents()
+    assert not dialog.btn_yes.isEnabled() and dialog.btn_cancel.isDefault()
+    dialog.check.setChecked(True)
+    assert dialog.btn_yes.isEnabled()
+    heading, body = dialog.findChild(QLabel, "heading"), dialog.findChild(QLabel, "body")
+    icon = dialog.findChild(QLabel, "icon")
+    assert "1234" in heading.text()
+    for label in (heading, body):
+        assert label.alignment() & Qt.AlignmentFlag.AlignLeft or not label.alignment() & Qt.AlignmentFlag.AlignRight
+        assert label.x() > icon.x() + icon.width() - 1                 # the text sits to the right of the icon
+        assert label.x() + label.width() <= dialog.width()             # ... and inside the window
+    assert dialog.btn_yes.x() >= 0 and dialog.btn_yes.x() < dialog.btn_cancel.x()  # buttons not clipped, yes left of cancel
+    assert dialog.btn_cancel.geometry().right() <= dialog.width()
+    for widget in dialog.findChildren(QPushButton) + [dialog.check]:
+        assert widget.geometry().right() <= dialog.width() and widget.geometry().bottom() <= dialog.height()
+    LocalizationManager.get_instance().set_locale("en")
+    dialog.close()
+
+
+
+def test_settings_go_to_the_user_folder_when_the_program_folder_is_read_only(tmp_path, monkeypatch):
+    import core.config_manager as cm
+
+    monkeypatch.delenv("SCUM_DATA_DIR", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setattr(cm, "_WRITABLE_CACHE", {})
+    real_open = open
+
+    def deny_probe(path, *a, **k):
+        if ".write_test_" in str(path):
+            raise PermissionError("read-only")
+        return real_open(path, *a, **k)
+
+    monkeypatch.setattr("builtins.open", deny_probe)
+    path = cm.get_portable_config_path("config.json")
+    assert str(tmp_path / "local") in path and path.endswith("config.json")
+    monkeypatch.undo()
+    monkeypatch.delenv("SCUM_DATA_DIR", raising=False)
+    monkeypatch.setattr(cm, "_WRITABLE_CACHE", {})
+    assert "SCUM_Chat_Translator" not in cm.get_portable_config_path("config.json")   # writable: stays next to the program
+
+
+def test_deleted_or_renamed_waypoints_do_not_come_back_from_the_replayed_log(tmp_path):
+    from core.coordinate_parser import parse_chat_coordinate
+
+    path = str(tmp_path / "points.json")
+    mgr = PointsManager(path)
+    line = "машина {X=-100000.500 Y=-50000.250 Z=1200.000}"
+    assert mgr.add_point(parse_chat_coordinate(line, "12:00:00"))
+    original = mgr.get_points()[0]
+    mgr.update_point_name(original.id, "my car")
+    assert not mgr.add_point(parse_chat_coordinate(line, "12:00:00"))          # replay of a renamed point
+    mgr.delete_point(original.id)
+    assert not mgr.add_point(parse_chat_coordinate(line, "12:00:00"))          # replay after deleting it
+    mgr2 = PointsManager(path)                                                  # ... also after a restart
+    assert not mgr2.add_point(parse_chat_coordinate(line, "12:00:00"))
+    assert mgr2.add_point(parse_chat_coordinate(line, "12:30:00"))              # a genuinely new post is accepted
+    mgr2.clear_all()
+    assert not PointsManager(path).add_point(parse_chat_coordinate(line, "12:30:00"))
+
+
+def test_imported_waypoints_get_their_place_and_sector_from_the_game_position():
+    from core.coordinate_parser import MapPoint, convert_norm_to_scum, convert_scum_to_norm, get_sector_info
+
+    pt = MapPoint.from_dict({"x": 100, "y": 200, "name": "a", "norm_x": 0.0, "norm_y": 0.0, "sector": "??"})
+    assert (pt.sector, pt.keypad) != ("??", "k5") and (pt.norm_x, pt.norm_y) == convert_scum_to_norm(100, 200)
+    # every grid line, converted to game units and back, stays in its own cell
+    for i in range(0, 16):
+        for j in range(0, 16):
+            x, y = convert_norm_to_scum(i / 15, j / 15)
+            nx, ny = convert_scum_to_norm(x, y)
+            sector, keypad = get_sector_info(nx, ny)
+            expected_sector, expected_keypad = get_sector_info(i / 15 + 1e-7, j / 15 + 1e-7)
+            if i < 15 and j < 15:
+                assert (sector, keypad) == (expected_sector, expected_keypad), (i, j)
+
+
+def test_a_new_session_log_with_the_same_name_is_read_from_its_start(tmp_path):
+    from core.players import PlayerRegistry
+
+    def user_line(sid, nick):
+        return f"[2026.11.13-10.00.00:123][  1]LogSCUM: Message from user: {nick} ({sid}) (hash: AB)\n"
+
+    log = tmp_path / "SCUM.log"
+    log.write_text("Log file open, 11/12/26 10:00:00\n" + user_line("76561198000000001", "Old") * 3, encoding="utf-8")
+    reg = PlayerRegistry(str(tmp_path / "players.json"))
+    reg.scan_logs(str(log))
+    assert reg.nick_of("76561198000000001") == "Old"
+    # the next session: same file name, but it is already BIGGER than what we read before
+    log.write_text("Log file open, 11/13/26 09:00:00\n" + user_line("76561198000000002", "Fresh") * 20, encoding="utf-8")
+    assert log.stat().st_size > reg._scanned["SCUM.log"]
+    reg.scan_logs(str(log))
+    assert reg.nick_of("76561198000000002") == "Fresh"
+    reg2 = PlayerRegistry(str(tmp_path / "players.json"))      # the fingerprint survives a restart
+    assert reg2.nick_of("76561198000000002") == "Fresh" and reg2._heads
+
+
+def test_csv_export_neutralises_spreadsheet_formulas(tmp_path):
+    import csv
+
+    hist = ChatHistory(max_entries=10)
+    hist.add("t", "=HYPERLINK(\"http://x\")", "+cmd|'/c calc'!A0", "-1+1", "en", "player")
+    hist.add("t", "@SUM(A1)", "\tTAB", "normal text", "en", "player")
+    out = tmp_path / "h.csv"
+    hist.export(str(out))
+    rows = list(csv.reader(out.open(encoding="utf-8-sig", newline="")))
+    assert all(cell[:1] not in "=+-@\t\r" for row in rows[1:] for cell in row if cell)
+    assert rows[1][2].startswith("'=") and rows[2][4] == "normal text"
+
+
+def test_history_can_be_switched_to_disk_and_back_at_runtime(tmp_path):
+    path = tmp_path / "h.jsonl"
+    hist = ChatHistory(max_entries=10, path=str(path))
+    hist.add("t", "A", "one", "one", "en", "player")
+    hist.set_path(None)                                  # the user turned "keep history" off
+    hist.add("t", "A", "two", "two", "en", "player")
+    assert path.read_text(encoding="utf-8").count("\n") == 1 and len(hist) == 2
+    hist.set_path(str(path))                             # ... and on again
+    hist.add("t", "A", "three", "three", "en", "player")
+    assert path.read_text(encoding="utf-8").count("\n") == 2
+
+
+def test_profiles_with_bad_values_are_repaired_and_errors_are_coded(tmp_path):
+    from core.profiles import ProfileError, ProfileManager
+
+    cfg = ConfigManager(str(tmp_path / "c.json"))
+    (tmp_path / "pr.json").write_text(json.dumps({"active": "Default", "profiles": {
+        "Default": {"font_size": 20.5, "max_messages": "20", "bg_opacity": "x", "font_bold": 1},
+        "Raid": {"font_size": 14}}}), encoding="utf-8")
+    mgr = ProfileManager(cfg, str(tmp_path / "pr.json"))
+    assert isinstance(mgr.profiles["Default"]["font_size"], int)
+    assert isinstance(mgr.profiles["Default"]["max_messages"], int) and isinstance(mgr.profiles["Default"]["font_bold"], bool)
+    assert mgr.apply("Raid") and cfg.get("font_size") == 14
+    assert mgr.rename("Raid", "Raid") == "Raid"                                   # same name: nothing to do
+    for call, code in ((lambda: mgr.create("  "), "empty"), (lambda: mgr.create("Raid"), "exists"),
+                       (lambda: mgr.rename("Raid", "Default"), "exists"), (lambda: mgr.delete("Default"), "default_locked")):
+        with pytest.raises(ProfileError) as info:
+            call()
+        assert info.value.code == code
+
+
+def test_settings_refuse_conflicting_hotkeys(tmp_path, monkeypatch):
+    from PyQt6.QtWidgets import QMessageBox
+
+    from ui.settings_window import SettingsDialog
+
+    cfg = ConfigManager(str(tmp_path / "cfg.json"))
+    dlg = SettingsDialog(cfg)
+    shown = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: shown.append(a[2]))
+    dlg.btn_k_map.set_hotkey("F9")                       # the same key as "position setup"
+    assert dlg._hotkey_conflict()
+    dlg.save_settings()
+    assert shown and cfg.get("hotkey_toggle_map") == "Ctrl+M"       # nothing was saved, the dialog stays open
+    dlg.btn_k_map.set_hotkey("Enter")
+    assert dlg._hotkey_conflict()
+    dlg.btn_k_map.set_hotkey("Ctrl+M")
+    assert dlg._hotkey_conflict() is None
+    dlg.close()
+
+
+def test_hotkeys_without_a_name_are_stored_and_parsed_as_virtual_keys():
+    from core.hotkey_manager import format_hotkey, parse_hotkey_string
+
+    assert parse_hotkey_string("Ctrl+VK_101") == (True, False, False, 101)      # numpad 5
+    assert parse_hotkey_string(format_hotkey(False, False, True, 124)) == (False, False, True, 124)   # Shift+F13
+    assert parse_hotkey_string("Key_1045") is None and parse_hotkey_string("VK_999") is None
+
+
+def _pump(cond, timeout):
+    """Like _wait, but keeps the Qt event loop running (queued signals from worker threads need it)."""
+    end = time.time() + timeout
+    while time.time() < end:
+        app.processEvents()
+        if cond():
+            return True
+        time.sleep(0.01)
+    return cond()
+
+
+def test_enter_never_copies_the_translation_of_older_text(tmp_path):
+    from ui.overlay import ChatOverlay
+
+    class SlowTranslator:
+        def translate_custom(self, text, target, source="auto"):
+            return f"TR<{text}>", "en"
+
+    overlay = ChatOverlay(ConfigManager(str(tmp_path / "cfg.json")))
+    overlay.set_translator(SlowTranslator())
+    overlay.show()
+    overlay.set_in_chat_mode(True)
+    copied = []
+    overlay.translate_and_copy.connect(lambda orig, trans: copied.append((orig, trans)))
+    overlay.input_field.setText("hello")
+    overlay._do_live_translate()
+    assert _pump(lambda: overlay._current_translation == "TR<hello>", 3)
+    overlay.input_field.setText("hello world")          # typed more, Enter pressed before the debounce fired
+    assert overlay._current_translation == ""
+    overlay._copy_translation()
+    assert _pump(lambda: copied, 3)
+    assert copied == [("hello world", "TR<hello world>")]
+    overlay.close()
+
+
+@pytest.mark.parametrize("lang", ["en", "uk"])
+@pytest.mark.parametrize("font_size", [10, 22, 40])
+@pytest.mark.parametrize("size", [(300, 150), (404, 237), (675, 330), (801, 366), (1600, 900)])
+@pytest.mark.parametrize("unlocked", [False, True])
+def test_overlay_never_clips_its_own_panels(tmp_path, lang, font_size, size, unlocked):
+    """The quick-chat bar, the header and the chat view stay completely inside the window at every size, font size,
+    language and mode (a window that is too small grows instead of cutting the bar off)."""
+    from core.i18n import LocalizationManager
+    from ui.overlay import ChatOverlay
+
+    LocalizationManager.get_instance().set_locale(lang)
+    cfg = ConfigManager(str(tmp_path / "cfg.json"))
+    cfg.set("font_size", font_size)
+    overlay = ChatOverlay(cfg)
+    overlay.resize(*size)
+    overlay.show()
+    if unlocked:
+        overlay.set_locked(False)
+    overlay.set_in_chat_mode(True)
+    for i in range(6):
+        overlay.add_message("12:00:00", "Bob", f"message {i}", f"message {i}", "en", "player")
+    app.processEvents()
+    window = overlay.rect()
+    panels = [overlay.input_bar, overlay.chat_view] + ([overlay.header_bar] if unlocked else [])
+    for panel in panels:
+        assert panel.isVisible()
+        top_left = panel.mapTo(overlay, panel.rect().topLeft())
+        bottom_right = panel.mapTo(overlay, panel.rect().bottomRight())
+        assert window.contains(top_left) and window.contains(bottom_right), (panel, top_left, bottom_right, window)
+    for button in (overlay.btn_copy,):
+        corner = button.mapTo(overlay, button.rect().bottomRight())
+        assert window.contains(corner)
+    LocalizationManager.get_instance().set_locale("en")
+    overlay.close()

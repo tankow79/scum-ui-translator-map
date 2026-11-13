@@ -33,6 +33,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "bg_opacity": 0.5,
     "max_messages": 20,
     "show_original": True,
+    "slang_mode": "translate",   # chat abbreviations (GG, BRB ...): "translate", "expand" (English) or "keep"
     "show_timestamp": True,
     "ignore_own_messages": False,
     "own_nickname": "",
@@ -99,7 +100,32 @@ def get_portable_config_path(filename: str = "config.json") -> str:
     else:
         # Project folder (one level above core/)
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if not override and not _is_writable_dir(base_dir):
+        # The program sits in a read-only place (Program Files, a write-protected drive): keep the settings and
+        # waypoints in the user's own data folder instead of losing them silently at every restart.
+        from core.paths import get_user_data_dir
+        base_dir = get_user_data_dir()
     return os.path.join(base_dir, filename)
+
+
+_WRITABLE_CACHE: Dict[str, bool] = {}
+
+
+def _is_writable_dir(path: str) -> bool:
+    """True when a file can be created in ``path`` (checked once per folder; os.access is unreliable on Windows)."""
+    cached = _WRITABLE_CACHE.get(path)
+    if cached is not None:
+        return cached
+    probe = os.path.join(path, f".write_test_{os.getpid()}")
+    try:
+        with open(probe, "w", encoding="utf-8") as f:
+            f.write("x")
+        os.remove(probe)
+        ok = True
+    except OSError:
+        ok = False
+    _WRITABLE_CACHE[path] = ok
+    return ok
 
 
 class ConfigManager:
@@ -109,6 +135,7 @@ class ConfigManager:
         self.config_path = config_path
         self.config: Dict[str, Any] = {}
         self._lock = threading.RLock()
+        self._save_lock = threading.Lock()   # snapshot + write happen together, so an older snapshot never lands last
         self._batch_depth = 0
         self._dirty = False
         self.load()
@@ -129,6 +156,12 @@ class ConfigManager:
             self.config = copy.deepcopy(DEFAULT_CONFIG)
             self.save()
         return self.config
+
+    @staticmethod
+    def sanitize_values(values: Dict[str, Any]) -> Dict[str, Any]:
+        """The given settings with every wrong-typed value replaced by its default (used for stored profiles)."""
+        clean = ConfigManager._sanitize({**copy.deepcopy(DEFAULT_CONFIG), **values})
+        return {k: clean[k] for k in values if k in DEFAULT_CONFIG}
 
     @staticmethod
     def _sanitize(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -157,9 +190,10 @@ class ConfigManager:
 
     def save(self):
         try:
-            with self._lock:
-                snapshot = copy.deepcopy(self.config)
-            atomic_write_json(self.config_path, snapshot)
+            with self._save_lock:
+                with self._lock:
+                    snapshot = copy.deepcopy(self.config)
+                atomic_write_json(self.config_path, snapshot)
         except Exception as e:
             log.error("Failed to save config.json: %s", e)
 

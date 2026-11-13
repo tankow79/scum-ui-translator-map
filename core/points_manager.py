@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import shutil
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple
@@ -46,13 +47,18 @@ class PointsManager(QObject):
             file_path = get_portable_config_path("points.json")
         self.file_path = file_path
         self.registry = registry
+        self._save_lock = threading.Lock()   # snapshot + write are one step: an older snapshot never lands last
         if registry is not None:
             registry.player_changed.connect(self.apply_player_update)
             registry.scan_finished.connect(lambda _n: self.relink_players())
             registry.player_removed.connect(self._unlink_player)
             registry.cleared.connect(self._unlink_all_players)
         self._points: List[MapPoint] = []
+        # Chat lines of deleted waypoints: the log's last 8 KB are replayed at every start, and a point the user
+        # deleted must not come back from that replay. Key = coordinates + the chat message's own time.
+        self._deleted_keys: List[str] = []
         self.load()
+        self._load_deleted()
 
     def load(self):
         self._points = []
@@ -74,10 +80,43 @@ class PointsManager(QObject):
         # Sort from newest to oldest
         self._points.sort(key=lambda p: p.created_timestamp, reverse=True)
 
+    DELETED_LIMIT = 3000
+
+    @property
+    def _deleted_path(self) -> str:
+        return os.path.splitext(self.file_path)[0] + ".deleted.json"
+
+    @staticmethod
+    def _chat_key(point: "MapPoint") -> str:
+        return f"{point.raw_coord}|{point.date_time}"
+
+    def _load_deleted(self):
+        try:
+            with open(self._deleted_path, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                self._deleted_keys = [k for k in data if isinstance(k, str)][-self.DELETED_LIMIT:]
+        except (OSError, ValueError):
+            self._deleted_keys = []
+
+    def _remember_deleted(self, points: List["MapPoint"]):
+        known = set(self._deleted_keys)
+        for pt in points:
+            key = self._chat_key(pt)
+            if pt.raw_coord and key not in known:
+                self._deleted_keys.append(key)
+                known.add(key)
+        self._deleted_keys = self._deleted_keys[-self.DELETED_LIMIT:]
+        try:
+            atomic_write_json(self._deleted_path, self._deleted_keys)
+        except OSError as exc:
+            log.warning("Could not save the list of deleted waypoints: %s", exc)
+
     def save(self):
         """Write points.json atomically (temp file + replace) so a crash never corrupts it."""
         try:
-            atomic_write_json(self.file_path, [p.to_dict() for p in self._points])
+            with self._save_lock:
+                atomic_write_json(self.file_path, [p.to_dict() for p in list(self._points)])
         except OSError as e:
             log.error("Could not save %s: %s", self.file_path, e)
 
@@ -155,8 +194,11 @@ class PointsManager(QObject):
         # Duplicate guard: the same coordinates with the same name are never added twice (also covers the
         # chat backlog that is replayed every time the app starts).
         for existing in self._points:
-            if existing.raw_coord == point.raw_coord and existing.name == point.name:
-                return False
+            if existing.raw_coord == point.raw_coord and (existing.name == point.name or
+                                                          existing.date_time == point.date_time):
+                return False      # (a renamed point is still recognised by the time of its chat message)
+        if self._chat_key(point) in self._deleted_keys:
+            return False          # the user deleted this one; this is only the log being replayed
 
         # Insert at the start of the list (newest point on top)
         self._points.insert(0, point)
@@ -339,13 +381,14 @@ class PointsManager(QObject):
                 idx = i
                 break
         if idx != -1:
-            self._points.pop(idx)
+            self._remember_deleted([self._points.pop(idx)])
             self.save()
             self.point_deleted.emit(point_id)
             return True
         return False
 
     def clear_all(self):
+        self._remember_deleted(self._points)
         self._points.clear()
         self.save()
         self.points_cleared.emit()

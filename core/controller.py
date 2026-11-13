@@ -8,6 +8,7 @@ from typing import Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from core import slang
 from core.chat_history import ChatHistory
 from core.config_manager import ConfigManager
 from core.coordinate_parser import parse_chat_coordinate
@@ -43,6 +44,7 @@ class AppController(QObject):
         self._next_ticket = 0          # next ticket handed out
         self._next_to_show = 0         # next ticket allowed to be shown
         self._ticket_times = {}        # ticket -> creation time
+        self._started_times = {}       # ticket -> moment its translation actually began
         self._finished = {}            # ticket -> publish arguments waiting for earlier tickets
         self._flush_pending = False
 
@@ -72,8 +74,28 @@ class AppController(QObject):
             return
         msg = result.message  # masked text for FilterAction.MASK, unchanged otherwise
 
-        # 4. Offline pre-check: skip the network round-trip when the text is already in the target language.
-        if self.cfg.get("autodetect_enabled", True):
+        # 4. Chat abbreviations (GG, GGNT, BRB, KOS ...): shown with their full meaning, see core/slang.py
+        source_text = msg          # what is sent to the translator (abbreviations replaced by their meaning)
+        expanded_slang = False
+        mode = slang.normalize_mode(self.cfg.get("slang_mode", slang.MODE_TRANSLATE))
+        found = slang.analyse(msg) if mode != slang.MODE_KEEP else None
+        if found is not None:
+            target = base_lang(self.translator.target_lang)
+            if mode == slang.MODE_EXPAND or (found.only_slang and target == "en"):
+                self._publish_in_order(self._take_ticket(), time_str, sender, msg, found.expanded, "slang", msg_type)
+                return
+            if found.only_slang:
+                ready = found.ukrainian() if target == "uk" else None
+                if ready:
+                    self._publish_in_order(self._take_ticket(), time_str, sender, msg, ready, "slang", msg_type)
+                else:
+                    self.executor.submit(self._async_translate_slang, self._take_ticket(), time_str, sender, msg,
+                                         found.expanded, msg_type)
+                return
+            source_text, expanded_slang = found.expanded, True
+
+        # 5. Offline pre-check: skip the network round-trip when the text is already in the target language.
+        if self.cfg.get("autodetect_enabled", True) and not expanded_slang:
             min_len = int(self.cfg.get("autodetect_min_length", 3))
             detected = quick_detect(msg, min_len)
             skip = split_list(self.cfg.get("autodetect_skip_languages", []))
@@ -83,10 +105,12 @@ class AppController(QObject):
                 self._publish_in_order(self._take_ticket(), time_str, sender, msg, msg, detected or "orig", msg_type)
                 return
 
-        self.executor.submit(self._async_translate, self._take_ticket(), time_str, sender, msg, msg_type)
+        self.executor.submit(self._async_translate, self._take_ticket(), time_str, sender, msg, msg_type,
+                             source_text if expanded_slang else None)
 
     # A translation that hangs must not hold back the whole chat: later messages wait at most this long.
-    ORDER_WAIT_SECONDS = 6.0
+    ORDER_WAIT_SECONDS = 10.0   # must stay above GoogleTranslatorEngine.TIME_BUDGET_SECONDS (+ API-key path 9 s)
+    QUEUE_GIVE_UP_SECONDS = 180.0   # a ticket that never even started (lost task) is skipped after this long
 
     def _take_ticket(self) -> int:
         with self._order_lock:
@@ -99,6 +123,7 @@ class AppController(QObject):
         """Show a finished message once every earlier message has been shown (or has waited too long)."""
         with self._order_lock:
             self._ticket_times.pop(ticket, None)
+            self._started_times.pop(ticket, None)
             if ticket < self._next_to_show:
                 ready, waiting = [args], False           # it was skipped as too slow: show it now
             else:
@@ -128,11 +153,21 @@ class AppController(QObject):
             if self._next_to_show in self._finished:
                 ready.append(self._finished.pop(self._next_to_show))
                 self._next_to_show += 1
-            elif time.monotonic() - self._ticket_times.get(self._next_to_show, 0.0) > self.ORDER_WAIT_SECONDS:
+            elif self._ticket_overdue(self._next_to_show):
                 self._next_to_show += 1                  # give up waiting for the slow one in front
             else:
                 break
         return ready, bool(self._finished)
+
+    def _ticket_overdue(self, ticket: int) -> bool:
+        """A translation that is running too long holds the chat back for at most ORDER_WAIT_SECONDS. Time spent
+        waiting in the queue does not count (during a burst many messages queue up, and the earlier ones are
+        simply not started yet), except for a task that never started at all."""
+        now = time.monotonic()
+        started = self._started_times.get(ticket)
+        if started is not None:
+            return now - started > self.ORDER_WAIT_SECONDS
+        return now - self._ticket_times.get(ticket, now - self.QUEUE_GIVE_UP_SECONDS - 1) > self.QUEUE_GIVE_UP_SECONDS
 
     def _flush_stale(self):
         with self._order_lock:
@@ -142,15 +177,31 @@ class AppController(QObject):
                 self._publish(*item)
             self._schedule_flush(waiting, 1.0)
 
-    def _async_translate(self, ticket: int, time_str: str, sender: str, msg: str, msg_type: str):
+    def _async_translate_slang(self, ticket: int, time_str: str, sender: str, msg: str, english: str, msg_type: str):
+        """A message made only of abbreviations: translate their English meaning into the chat language."""
+        with self._order_lock:
+            self._started_times[ticket] = time.monotonic()
+        translated = english                      # fallback when the translation service is unreachable
         try:
-            translated, src_lang = self.translator.translate(msg)
+            result, lang = self.translator.translate_custom(english, self.translator.target_lang, "en")
+            if result and lang != "unknown":
+                translated = result
+        except Exception:
+            log.exception("Translation of an abbreviation failed")
+        self._publish_in_order(ticket, time_str, sender, msg, translated, "slang", msg_type)
+
+    def _async_translate(self, ticket: int, time_str: str, sender: str, msg: str, msg_type: str,
+                         source_text: Optional[str] = None):
+        with self._order_lock:
+            self._started_times[ticket] = time.monotonic()
+        try:
+            translated, src_lang = self.translator.translate(source_text or msg)
         except Exception:  # never let a worker thread die silently
             log.exception("Translation failed")
             translated, src_lang = msg, "unknown"
 
         # Post-check with the language reported by the translation service.
-        if self.cfg.get("autodetect_enabled", True) and src_lang not in ("", "unknown", "auto"):
+        if source_text is None and self.cfg.get("autodetect_enabled", True) and src_lang not in ("", "unknown", "auto"):
             skip = split_list(self.cfg.get("autodetect_skip_languages", []))
             if self.cfg.get("autodetect_skip_target_language", True):
                 skip.append(self.translator.target_lang)
