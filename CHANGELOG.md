@@ -3,6 +3,20 @@
 All notable changes to this project are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [2.4.0]
+
+### Added
+- **Settings -> Players**: the nickname <-> SteamID base. Clickable SteamIDs open the Steam profile; players who renamed expand into a list of old nicknames with the date of each change. Old nicknames or whole players can be deleted, or the whole base cleared, always after a confirmation.
+- **Collect SteamIDs** switch (Settings -> Players, on by default). Off: nothing is read or stored. On: all current and old logs are scanned.
+- On first launch the app reads **all existing logs** (including old `SCUM-backup-*.log`) to learn every nickname and SteamID; later starts read only what is new.
+
+### Changed
+- SteamIDs are never typed by the user any more: bases link to players by the nickname you enter (current or old) and follow renames automatically.
+- The map hover card for a base now appears under the cursor and stays open while you move onto it. Each player has a 🔗 button that opens the Steam profile; a player who renamed shows the nickname as a drop-down (▾) that opens a small list with the date of each change and the old nickname.
+
+### Fixed
+- The player registry was never filled while the game ran (the log parser passed the nickname and SteamID to the registry in swapped order).
+
 ## [2.3.0]
 
 ### Added

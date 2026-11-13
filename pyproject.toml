@@ -1,6 +1,6 @@
 [project]
 name = "scum-chat-translator"
-version = "2.3.0"
+version = "2.4.0"
 description = "SCUM tactical map and real-time chat translator overlay for Windows"
 readme = "README.md"
 requires-python = ">=3.10"

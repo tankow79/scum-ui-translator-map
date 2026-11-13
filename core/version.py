@@ -4,7 +4,7 @@ Version and repository configuration info for SCUM Chat Translator.
 
 from typing import Tuple
 
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 __app_name__ = "SCUM Tactical Map & Real-Time Chat Translator"
 GITHUB_OWNER = "tankow79"
 GITHUB_REPO = "scum-ui-translator-map"

@@ -58,7 +58,7 @@
     "squad_title": "Squadmates (green in chat):",
     "squad_placeholder": "Comma-separated nicknames: Ghost, Reaper, Alex",
     "squad_hint": "Messages from these players are shown in green. Other messages are blue, unless the message itself specifies a colour",
-    "blacklist_hint":"Messages from these players are not translated, showing in original language",
+    "blacklist_hint": "Messages from these players are not translated, showing in original language",
     "show_original": "Show original text below translation",
     "ignore_own": "Do not translate own messages (own nickname)",
     "display_mode": "Border / scrollbar style:",
@@ -151,7 +151,8 @@
     "sec_overlay": "Chat overlay",
     "sec_map": "Map & waypoints",
     "sec_hotkeys": "Keyboard shortcuts",
-    "update_interval": "Check for updates every (hours, 0 = only at startup):"
+    "update_interval": "Check for updates every (hours, 0 = only at startup):",
+    "nav_players": "Players"
   },
   "map": {
     "title": "SCUM Interactive Tactical Map",
@@ -187,7 +188,7 @@
     "tip_color": "Change the pin color on the map",
     "name_placeholder": "Waypoint name...",
     "tip_name": "Click to rename the waypoint (saved automatically)",
-    "players_placeholder": "👥 Nicknames or SteamIDs (comma-separated)...",
+    "players_placeholder": "👥 Base players: nicknames (comma-separated)...",
     "tip_players": "Nicknames of players living at this base (shown on map hover)",
     "tip_on_map": "Open and focus this waypoint on the map",
     "tip_copy": "Copy the full in-game coordinates to the clipboard",
@@ -235,6 +236,25 @@
     "check_failed_title": "Update check failed",
     "check_failed": "Could not check for updates on GitHub:\n{error}"
   },
+  "players": {
+    "title": "Players",
+    "hint": "Built automatically from the game logs: every nickname is matched to the player's permanent SteamID. If a player renames, the new name replaces the old one everywhere (bases included) and the old name is kept in a list. Click a SteamID to open the Steam profile.",
+    "search_placeholder": "Search by nickname or SteamID…",
+    "col_nick": "Nickname",
+    "col_steam": "SteamID",
+    "open_profile": "Open Steam profile",
+    "changed_on": "changed on {date}",
+    "count": "Players: {shown} shown of {total}",
+    "delete_old": "Delete old nickname",
+    "delete_player": "Delete player",
+    "clear_all": "Clear all players…",
+    "confirm_delete_old": "Delete the old nickname \"{nick}\"?",
+    "confirm_delete_player": "Delete the player \"{nick}\" ({steam_id}) with all old nicknames?\nBases will keep the nickname as plain text.",
+    "confirm_clear": "Delete ALL {count} players from the database?\nThis cannot be undone.",
+    "collect_title": "Collecting",
+    "collect_check": "Collect SteamIDs and nicknames from the game logs",
+    "collect_hint": "On: the app reads all current and old logs and keeps every nickname with its SteamID. Off: nothing is read or stored (the data already collected stays until you delete it below)."
+  },
   "history": {
     "title": "Chat History",
     "search": "🔍 Search messages or players...",
@@ -275,10 +295,9 @@
     "menu_copy_coords": "📋 Copy coordinates",
     "menu_delete": "🗑️ Delete point",
     "dlg_players_title": "Base players",
-    "dlg_players_label": "Enter base players, comma-separated. Use a nickname, a SteamID64 or a steamcommunity.com/profiles/… link — a SteamID keeps the name up to date after a rename:\n{name} [{sector} {keypad}]",
+    "dlg_players_label": "Enter the nicknames of the players living at this base, comma-separated. Known players are linked automatically and follow nickname changes:\n{name} [{sector} {keypad}]",
     "menu_steam_profiles": "🔗 Steam profiles",
     "card_players": "👥 Base players:",
-    "card_hint": "Click a nickname to open its Steam profile",
     "dlg_rename_title": "Rename point",
     "dlg_rename_label": "Enter a new point name:",
     "tip_type": "🏷️ Type: {name}",
@@ -296,7 +315,9 @@
     "cursor_info": "📍 <b>{sector}</b> ({keypad}) | X={x} Y={y}",
     "title": "SCUM Island Map",
     "tip_zoom_in": "Zoom in",
-    "tip_zoom_out": "Zoom out"
+    "tip_zoom_out": "Zoom out",
+    "open_steam": "Open Steam profile",
+    "old_nicks": "Previous nicknames:"
   },
   "overlay_ui": {
     "swap_languages": "Swap languages",
