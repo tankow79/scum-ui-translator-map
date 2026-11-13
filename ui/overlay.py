@@ -21,6 +21,15 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.chat_color import (
+    GAME_FONT_STACK,
+    SQUAD_COLOR,
+    extract_text_color,
+    game_timestamp,
+    is_squad_member,
+    parse_nick_list,
+    pick_color,
+)
 from core.config_manager import ConfigManager
 from core.i18n import tr
 from core.languages import ALL_LANGUAGES
@@ -43,7 +52,7 @@ class OutlinedChatBrowser(QTextBrowser):
         super().__init__(parent)
         self.outline_enabled = True
         self.font_bold = False
-        self.font_size = 13
+        self.font_size = 22
         self.viewport().installEventFilter(self)
 
     def eventFilter(self, obj, event):
@@ -73,9 +82,10 @@ class OutlinedChatBrowser(QTextBrowser):
 
             # 3. Draw the outline on the viewport with an offset adapted to the font size
             p = QPainter(vp)
-            offsets = [(-1, -1), (1, -1), (-1, 1), (1, 1), (-1, 0), (1, 0), (0, -1), (0, 1)]
-            if self.font_bold or self.font_size >= 16:
-                offsets += [(-2, 0), (2, 0), (0, -2), (0, 2)]
+            # The in-game outline is a partial one: black only on the right and bottom edges of the glyphs
+            offsets = [(1, 0), (0, 1), (1, 1)]
+            if self.font_size >= 28:
+                offsets += [(2, 1), (1, 2), (2, 2)]
 
             for dx, dy in offsets:
                 p.drawImage(dx, dy, black_img)
@@ -844,11 +854,12 @@ class ChatOverlay(QWidget):
 
         target_lang = self.cfg.get("target_language", "uk")
         show_orig = self.cfg.get("show_original", True)
-        font_size = self.cfg.get("font_size", 13)
+        font_size = self.cfg.get("font_size", 22)
         font_bold = self.cfg.get("font_bold", False)
         text_outline = self.cfg.get("text_outline", True)
         own_nick = self.cfg.get("own_nickname", "").lower()
-        weight_css = "font-weight: 700;" if font_bold else "font-weight: 500;"
+        squad_nicks = parse_nick_list(self.cfg.get("squad_nicknames", []))
+        weight_css = "font-weight: 700;" if font_bold else "font-weight: 400;"
 
         self.chat_view.outline_enabled = text_outline
         self.chat_view.font_size = font_size
@@ -856,56 +867,46 @@ class ChatOverlay(QWidget):
 
         html_parts = []
         for e in visible_entries:
-            # Authentic SCUM in-game chat color scheme:
+            # Colours: squadmates (and yourself) green, a colour given in the message wins, the rest blue
+            orig_text, explicit_color = extract_text_color(e.original)
+            trans_text, _ = extract_text_color(e.translated)
             is_squad = (
                 (own_nick and e.sender.lower() == own_nick) or
                 e.msg_type in ("squad", "team") or
+                is_squad_member(e.sender, squad_nicks) or
                 any(tag in e.sender.lower() for tag in (
                     "(squad)", "[squad]", "(team)", "[team]",
                     "(сквад)", "[сквад]", "(отряд)", "[отряд]",
                     "(загін)", "[загін]", "(команда)", "[команда]"
                 ))
             )
-            if is_squad:
-                # Own nickname / squad messages: SCUM Green (#4ade80)
-                sender_color = "#4ade80"
-                msg_color = "#4ade80"
-                trans_color = "#4ade80"
-            elif e.msg_type == "server" or any(
-                s in e.sender.lower()
-                for s in ["message of the day", "announcement", "welcome", "sunhouse", "admin", "server"]
-            ):
-                # Server messages, MOTD, rules: SCUM amber (#ffca00)
-                sender_color = "#ffca00"
-                msg_color = "#ffca00"
-                trans_color = "#ffca00"
+            is_server = e.msg_type == "server" or any(
+                k in e.sender.lower()
+                for k in ("message of the day", "announcement", "welcome", "sunhouse", "admin", "server")
+            )
+            if is_squad and not explicit_color:
+                color = SQUAD_COLOR
             else:
-                # Regular global player chat: Electric Cyan (#00e5ff)
-                sender_color = "#00e5ff"
-                msg_color = "#00e5ff"
-                trans_color = "#00e5ff"
+                color = pick_color(e.sender, squad_nicks, explicit_color, server=is_server)
 
             safe_sender = html.escape(e.sender)
-            safe_orig = html.escape(e.original)
-            safe_trans = html.escape(e.translated)
+            safe_orig = html.escape(orig_text)
+            safe_trans = html.escape(trans_text)
             is_same = (safe_orig.strip() == safe_trans.strip()) or (e.src_lang == target_lang) or (e.src_lang in ("orig", "blacklist"))
 
+            # In-game look: the whole line (date, nickname, text) shares one colour and one font
+            stamp = html.escape(game_timestamp(e.time_str))
+            body = safe_orig if is_same else safe_trans
             part = (
-                f'<div style="margin-bottom:6px; font-family:\'Segoe UI\',sans-serif;'
-                f' font-size:{font_size}px; line-height:1.35;">'
-                f'<span style="color:#94a3b8; font-size:{font_size - 2}px;">[{e.time_str}] </span>'
-                f'<span style="color:{sender_color}; font-weight:bold;">{safe_sender}</span>: '
+                f'<div style="margin-bottom:4px; font-family:{GAME_FONT_STACK};'
+                f' font-size:{font_size}px; line-height:1.15; color:{color}; {weight_css}">'
+                f'[{stamp}] {safe_sender}: {body}'
             )
-
-            if is_same:
-                part += f'<span style="color:{msg_color}; {weight_css}">{safe_orig}</span>'
-            else:
-                part += f'<span style="color:{trans_color}; {weight_css}">{safe_trans}</span>'
-                if show_orig:
-                    part += (
-                        f'<br><span style="color:#cbd5e1; font-size:{font_size - 2}px; padding-left:10px;">'
-                        f'↳ <i>{tr("overlay.original_prefix")} {safe_orig}</i></span>'
-                    )
+            if not is_same and show_orig:
+                part += (
+                    f'<br><span style="color:#cbd5e1; font-size:{max(10, font_size - 4)}px; padding-left:10px;">'
+                    f'↳ <i>{tr("overlay.original_prefix")} {safe_orig}</i></span>'
+                )
 
             part += '</div>'
             html_parts.append(part)

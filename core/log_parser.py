@@ -4,18 +4,31 @@ import threading
 import time
 from typing import Callable, Optional
 
+from core.chat_color import log_time_to_local
+
 
 class ScumLogParser:
     """
     Monitors SCUM.log in real time and parses chat messages.
     """
-    def __init__(self, log_path: str, on_message: Callable[[str, str, str, str], None]):
+    def __init__(
+        self,
+        log_path: str,
+        on_message: Callable[[str, str, str, str], None],
+        on_player: Optional[Callable[[str, str, str], None]] = None,
+    ):
         """
         :param log_path: Full path to SCUM.log
         :param on_message: Callback(timestamp_str, sender, message, msg_type)
+        :param on_player: Callback(nickname, steam_id, hash) for ``Message from user:`` lines
         """
         self.log_path = log_path
         self.on_message = on_message
+        self.on_player = on_player
+        # "Message from user: Nick (76561199117414081) (hash: 46E0...)" precedes each chat line
+        self._pattern_user = re.compile(
+            r'LogSCUM:\s*Message from user:\s*(?P<nick>.+?)\s*\((?P<sid>\d{17})\)\s*\(hash:\s*(?P<hash>[0-9A-Fa-f]+)\)'
+        )
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
@@ -47,15 +60,9 @@ class ScumLogParser:
             self._thread.join(timeout=1.0)
 
     def _format_time(self, raw_time: str) -> str:
-        # raw_time: "2026.11.03-20.51.28" -> "20:51:28"
-        try:
-            parts = raw_time.split("-")
-            if len(parts) == 2:
-                hms = parts[1].replace(".", ":")
-                return hms
-        except Exception:
-            pass
-        return raw_time
+        # raw_time is UTC ("2026.11.03-20.51.28"); the game chat shows local time -> "21:51:28"
+        full = log_time_to_local(raw_time)
+        return full.split(" - ")[-1] if " - " in full else raw_time
 
     def _tail_loop(self):
         file = None
@@ -108,6 +115,12 @@ class ScumLogParser:
     def _process_line(self, line: str):
         if "LogSCUM:" not in line:
             return
+
+        if self.on_player is not None:
+            um = self._pattern_user.search(line)
+            if um:
+                self.on_player(um.group("nick").strip(), um.group("sid"), um.group("hash").upper())
+                return
 
         msg_type = "player"
         m = self._pattern_player.match(line)

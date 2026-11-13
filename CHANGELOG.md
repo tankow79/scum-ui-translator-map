@@ -3,6 +3,20 @@
 All notable changes to this project are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [2.3.0]
+
+### Added
+- **Player registry (`players.json`)**: the app records every player's permanent SteamID64 and current nickname from the `Message from user:` log lines. Nickname changes are tracked automatically.
+- **Base players by SteamID**: in a base's players field you can enter a nickname, a SteamID64 or a `steamcommunity.com/profiles/…` link. Linked players follow nickname changes automatically, and hovering a base on the map shows a card with clickable Steam profile links (also in the base's right-click menu).
+- **Squadmates setting** (Settings -> Chat -> Players): nicknames listed there are shown in green in the overlay chat.
+
+### Changed
+- Overlay chat now mimics the in-game chat: Bahnschrift SemiBold SemiCondensed font (22 px by default), a partial black outline on the right/bottom edges only, one colour for the whole line, and the `[dd/mm/yyyy - HH:MM:SS]` timestamp in local time (SCUM.log stores UTC). Squad green `#C2F800`, other chat blue `#00E6F3`, server messages yellow.
+- Overlay chat colours: squadmates green; everything else blue (server messages included); a colour given in the message itself (`<color=#rrggbb>`, `[color=#rrggbb]`, `<font color="#rrggbb">`) is used as is and the tag is hidden.
+
+### Fixed
+- Chat timestamps are now local time, matching the in-game chat (SCUM.log stores UTC).
+
 ## [2.2.0]
 
 ### Added

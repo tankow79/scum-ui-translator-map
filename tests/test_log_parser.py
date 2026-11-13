@@ -1,3 +1,4 @@
+from core.chat_color import log_time_to_local
 from core.log_parser import ScumLogParser
 
 
@@ -13,7 +14,7 @@ def test_parser_player_message():
 
     assert len(captured) == 1
     t, sender, msg, m_type = captured[0]
-    assert t == "17:10:32"
+    assert t == log_time_to_local("2026.11.03-17.10.32").split(" - ")[1]
     assert sender == "Player1"
     assert msg == "im b2 bro"
     assert m_type == "player"
@@ -27,7 +28,7 @@ def test_parser_special_killfeed_message():
 
     assert len(captured) == 1
     t, sender, msg, m_type = captured[0]
-    assert t == "16:50:53"
+    assert t == log_time_to_local("2026.11.03-16.50.53").split(" - ")[1]
     assert sender == "I ain´t DeAd"
     assert "★ [NORGE] Aron ➡ [Death Eaters] Player2" in msg
     assert m_type == "player"
@@ -41,14 +42,14 @@ def test_parser_server_announcement():
 
     assert len(captured) == 1
     t, sender, msg, m_type = captured[0]
-    assert t == "20:51:28"
+    assert t == log_time_to_local("2026.11.03-20.51.28").split(" - ")[1]
     assert sender == "Message Of The Day"
     assert "https://discord.gg/GRrreuFPRq" in msg
     assert m_type == "server"
 
 def test_parser_format_time():
     parser = ScumLogParser("dummy.log", lambda *a: None)
-    assert parser._format_time("2026.11.03-20.51.28") == "20:51:28"
+    assert parser._format_time("2026.11.03-20.51.28") == log_time_to_local("2026.11.03-20.51.28").split(" - ")[1]
     assert parser._format_time("invalid_format") == "invalid_format"
 
 def test_parser_squad_message():

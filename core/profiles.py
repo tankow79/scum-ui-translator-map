@@ -22,7 +22,7 @@ PROFILE_KEYS = (
     "show_original", "show_timestamp", "ignore_own_messages",
     "ui_display_mode", "font_size", "font_bold", "text_outline",
     "bg_opacity", "max_messages", "message_fade_timeout",
-    "blacklist_nicknames", "blacklist_words_enabled", "blacklist_words",
+    "blacklist_nicknames", "squad_nicknames", "blacklist_words_enabled", "blacklist_words",
     "blacklist_words_action", "blacklist_words_whole_word", "blacklist_words_case_sensitive",
     "autodetect_enabled", "autodetect_skip_target_language", "autodetect_skip_languages",
     "autodetect_min_length",

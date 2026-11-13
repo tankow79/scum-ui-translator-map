@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.chat_color import parse_nick_list
 from core.config_manager import ConfigManager
 from core.i18n import LocalizationManager, tr
 from core.languages import ALL_LANGUAGES
@@ -340,6 +341,9 @@ class SettingsDialog(QDialog):
         self.txt_blacklist = QLineEdit()
         self.txt_blacklist.setPlaceholderText(tr("settings.blacklist_placeholder"))
         s.add_field(tr("settings.blacklist_title"), self.txt_blacklist, tr("settings.blacklist_hint"))
+        self.txt_squad = QLineEdit()
+        self.txt_squad.setPlaceholderText(tr("settings.squad_placeholder"))
+        s.add_field(tr("settings.squad_title"), self.txt_squad, tr("settings.squad_hint"))
         page.add_section(s)
 
         self.section_words = page.add_section(WordFilterSection())
@@ -473,6 +477,7 @@ class SettingsDialog(QDialog):
         self.chk_ignore_own.setChecked(self.cfg.get("ignore_own_messages", False))
         blacklist = self.cfg.get("blacklist_nicknames", [])
         self.txt_blacklist.setText(", ".join(blacklist) if isinstance(blacklist, list) else str(blacklist))
+        self.txt_squad.setText(", ".join(parse_nick_list(self.cfg.get("squad_nicknames", []))))
 
         self.chk_font_bold.setChecked(self.cfg.get("font_bold", False))
         self.chk_text_outline.setChecked(self.cfg.get("text_outline", True))
@@ -483,7 +488,7 @@ class SettingsDialog(QDialog):
         opacity = int(self.cfg.get("bg_opacity", 0.5) * 100)
         self.slider_opacity.setValue(opacity)
         self.badge_opacity.setText(f"{opacity}%")
-        font = self.cfg.get("font_size", 13)
+        font = self.cfg.get("font_size", 22)
         self.slider_font.setValue(font)
         self.badge_font.setText(f"{font} px")
         msgs = self.cfg.get("max_messages", 20)
@@ -568,6 +573,7 @@ class SettingsDialog(QDialog):
         self.cfg.set("show_original", self.chk_show_orig.isChecked())
         self.cfg.set("ignore_own_messages", self.chk_ignore_own.isChecked())
         self.cfg.set("blacklist_nicknames", [n.strip() for n in self.txt_blacklist.text().split(",") if n.strip()])
+        self.cfg.set("squad_nicknames", parse_nick_list(self.txt_squad.text()))
 
         self.cfg.set("font_bold", self.chk_font_bold.isChecked())
         self.cfg.set("text_outline", self.chk_text_outline.isChecked())

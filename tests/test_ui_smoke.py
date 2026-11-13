@@ -325,14 +325,14 @@ def test_text_outline_and_scum_colors(qapp, tmp_path):
     # 1. Adding a server message
     overlay.add_message("02:45:38", "Server", "Rule: No base raiding!", "Rule: No base raiding!", "en", "server")
     html = overlay.chat_view.toHtml()
-    # SCUM color for server (#ffca00)
+    # Server messages stay yellow (#ffca00)
     assert "#ffca00" in html
 
     # 2. Adding a player message
     overlay.add_message("02:46:00", "PlayerOne", "Hello guys", "Привіт хлопці", "en", "player")
     html = overlay.chat_view.toHtml()
-    # SCUM color for player (#00e5ff)
-    assert "#00e5ff" in html
+    # SCUM color for player (#00e6f3)
+    assert "#00e6f3" in html
 
     # 3. Check outline rendering
     overlay.chat_view.resize(500, 200)
@@ -360,25 +360,25 @@ def test_squad_green_color(qapp, tmp_path):
     # 1. Squad via msg_type="squad"
     overlay.add_message("12:00:00", "Mate", "Cover me", "Прикрий мене", "en", "squad")
     html1 = overlay.chat_view.toHtml()
-    assert "#4ade80" in html1
+    assert "#c2f800" in html1
 
     # 2. Squad via nickname prefix: [Squad] Mate
     overlay.clear_chat()
     overlay.add_message("12:00:01", "[Squad] Mate", "Enemy ahead", "Ворог попереду", "en", "player")
     html2 = overlay.chat_view.toHtml()
-    assert "#4ade80" in html2
+    assert "#c2f800" in html2
 
     # 3. Squad via Ukrainian prefix: (сквад) Друг
     overlay.clear_chat()
     overlay.add_message("12:00:02", "(сквад) Друг", "Знайшов лут", "Знайшов лут", "uk", "player")
     html3 = overlay.chat_view.toHtml()
-    assert "#4ade80" in html3
+    assert "#c2f800" in html3
 
     # 4. Own nickname MyHero
     overlay.clear_chat()
     overlay.add_message("12:00:03", "myhero", "Я на базі", "Я на базі", "uk", "player")
     html4 = overlay.chat_view.toHtml()
-    assert "#4ade80" in html4
+    assert "#c2f800" in html4
 
 
 def test_map_only_mode_controller(qapp, tmp_path):
@@ -430,3 +430,19 @@ def test_settings_language_tab_lists_installed_locales_and_saves_choice(qapp, tm
 
 
 
+
+
+def test_squad_nicknames_green_and_explicit_color(qapp, tmp_path):
+    cfg = ConfigManager(str(tmp_path / "test_cfg.json"))
+    cfg.set("squad_nicknames", ["Ghost"])
+    overlay = ChatOverlay(cfg)
+    overlay.add_message("12:00:00", "ghost", "hi", "hi", "en", "player")
+    assert "#c2f800" in overlay.chat_view.toHtml()
+    overlay.clear_chat()
+    overlay.add_message("12:00:01", "Stranger", "hi", "hi", "en", "player")
+    html = overlay.chat_view.toHtml()
+    assert "#00e6f3" in html and "#c2f800" not in html
+    overlay.clear_chat()
+    overlay.add_message("12:00:02", "Ghost", "<color=#ff8800>raid</color>", "raid", "en", "player")
+    html = overlay.chat_view.toHtml()
+    assert "#ff8800" in html and "<color" not in html

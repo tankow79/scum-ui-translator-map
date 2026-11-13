@@ -19,7 +19,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "overlay_height": 340,
     "quick_chat_x": -1,
     "quick_chat_y": -1,
-    "font_size": 13,
+    "font_size": 22,  # matches the in-game chat size at 1080p
     "font_bold": False,
     "text_outline": True,       # Black text outline for maximum readability on any background
     "message_fade_timeout": 10,  # Seconds a message stays on screen (0 = never fade)
@@ -31,6 +31,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "ignore_own_messages": False,
     "own_nickname": "",
     "blacklist_nicknames": [],  # Players whose messages are not translated (kept in the original language)
+    "squad_nicknames": [],  # Squadmates shown in green in the overlay chat
     "hotkey_toggle_lock": "F9",
     "hotkey_toggle_visibility": "F8",
     "hotkey_quick_chat": "T",
