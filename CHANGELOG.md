@@ -5,6 +5,11 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [2.4.4] - 2026-11-13
+
+### Fixed
+- **Small empty windows flashed on the screen for a moment while the program was starting** (a waypoint row's "players" field was shown before it had a parent). Nothing but the overlay and the tray icon appears at start-up now.
+
 ## [2.4.3] - 2026-11-13
 
 ### Fixed

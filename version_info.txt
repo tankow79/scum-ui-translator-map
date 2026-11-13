@@ -4,8 +4,8 @@
 #
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(2, 4, 3, 0),
-    prodvers=(2, 4, 3, 0),
+    filevers=(2, 4, 4, 0),
+    prodvers=(2, 4, 4, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -21,12 +21,12 @@ VSVersionInfo(
           [
             StringStruct('CompanyName', 'SCUM Community Tools'),
             StringStruct('FileDescription', 'SCUM Tactical Map & Real-Time Chat Translator'),
-            StringStruct('FileVersion', '2.4.3.0'),
+            StringStruct('FileVersion', '2.4.4.0'),
             StringStruct('InternalName', 'SCUM_Chat_Translator'),
             StringStruct('LegalCopyright', 'Copyright (c) 2026. MIT License.'),
             StringStruct('OriginalFilename', 'SCUM_Chat_Translator.exe'),
             StringStruct('ProductName', 'SCUM Tactical Map & Real-Time Chat Translator'),
-            StringStruct('ProductVersion', '2.4.3.0'),
+            StringStruct('ProductVersion', '2.4.4.0'),
             StringStruct('Comments', 'Official external tactical overlay & translator for SCUM game.')
           ]
         )

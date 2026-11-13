@@ -1370,3 +1370,37 @@ def test_message_dialogs_are_laid_out_neatly():
         if yes:
             assert dialog.btn_no.isDefault() and dialog.btn_yes.x() < dialog.btn_no.x()
         dialog.close()
+
+
+def test_building_point_rows_never_flashes_a_top_level_window(tmp_path):
+    """A child widget shown before it has a parent becomes a stray window (the flicker seen at start-up)."""
+    from PyQt6.QtCore import QEvent, QObject
+    from PyQt6.QtWidgets import QWidget
+
+    from core.coordinate_parser import MapPoint
+    from core.points_manager import PointsManager
+    from ui.points_window import PointRowWidget
+
+    class Spy(QObject):
+        def __init__(self):
+            super().__init__()
+            self.windows = []
+
+        def eventFilter(self, obj, event):
+            if event.type() == QEvent.Type.Show and obj.isWidgetType() and obj.isWindow():
+                self.windows.append(type(obj).__name__)
+            return False
+
+    mgr = PointsManager(str(tmp_path / "points.json"))
+    point = MapPoint.from_dict({"id": "a", "x": 1000.0, "y": 2000.0, "category": "base", "players": "bob"})
+    spy = Spy()
+    app.installEventFilter(spy)
+    try:
+        holder = QWidget()
+        row = PointRowWidget(point, mgr, holder)
+        row.update_from_point(point)
+        app.processEvents()
+    finally:
+        app.removeEventFilter(spy)
+        holder.deleteLater()
+    assert spy.windows == []
