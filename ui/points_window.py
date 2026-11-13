@@ -207,7 +207,7 @@ class PointRowWidget(QFrame):
         meta.addStretch(1)
 
         # 6. Inline player nickname editing (base only)
-        self.txt_players = QLineEdit(getattr(self.point, "players", ""))
+        self.txt_players = QLineEdit(getattr(self.point, "players", ""), self)
         self.txt_players.setFixedHeight(22)
         self.txt_players.setPlaceholderText(tr("points.players_placeholder"))
         self.txt_players.setToolTip(tr("points.tip_players"))
