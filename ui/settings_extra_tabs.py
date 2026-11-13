@@ -15,7 +15,6 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPlainTextEdit,
     QSpinBox,
     QVBoxLayout,
@@ -26,6 +25,7 @@ from core.config_manager import ConfigManager
 from core.i18n import LocalizationManager, tr
 from core.message_filter import split_list
 from core.profiles import DEFAULT_PROFILE, ProfileManager
+from ui.dialogs import ask, notify
 from ui.flow_layout import button_row
 from ui.settings_widgets import Section, WrapCheck, make_button, muted_label
 
@@ -242,7 +242,7 @@ class ProfilesTab(QWidget):
         try:
             created = self.profiles.create(name)
         except ValueError as exc:
-            QMessageBox.warning(self, tr("settings.profiles_title"), _profile_error_text(exc))
+            notify(self, tr("settings.profiles_title"), _profile_error_text(exc), "warning")
             return
         self._reload()
         self.profiles_changed.emit()
@@ -265,7 +265,7 @@ class ProfilesTab(QWidget):
         try:
             self.profiles.rename(name, new)
         except ValueError as exc:
-            QMessageBox.warning(self, tr("settings.profiles_title"), _profile_error_text(exc))
+            notify(self, tr("settings.profiles_title"), _profile_error_text(exc), "warning")
             return
         self._reload()
         self.profiles_changed.emit()
@@ -275,12 +275,9 @@ class ProfilesTab(QWidget):
         if not name or not self.profiles:
             return
         if name == DEFAULT_PROFILE:
-            QMessageBox.information(self, tr("settings.profiles_title"), tr("settings.profile_default_locked"))
+            notify(self, tr("settings.profiles_title"), tr("settings.profile_default_locked"))
             return
-        answer = QMessageBox.question(self, tr("settings.profiles_title"), tr("settings.profile_delete_confirm", profile=name),
-                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                      QMessageBox.StandardButton.No)
-        if answer == QMessageBox.StandardButton.Yes:
+        if ask(self, tr("settings.profiles_title"), tr("settings.profile_delete_confirm", profile=name), danger=True):
             active_before = self.profiles.active
             self.profiles.delete(name)
             self._reload()

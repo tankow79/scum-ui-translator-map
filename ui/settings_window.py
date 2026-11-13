@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
     QSpinBox,
     QStackedWidget,
@@ -28,6 +27,7 @@ from core.i18n import LocalizationManager, tr
 from core.languages import ALL_LANGUAGES
 from core.updater import UpdateChecker, localize_error
 from core.version import GITHUB_REPO_URL, __version__
+from ui.dialogs import notify
 from ui.flow_layout import button_row
 from ui.players_page import PlayersPage
 from ui.settings_extra_tabs import (
@@ -614,7 +614,7 @@ class SettingsDialog(QDialog):
     def save_settings(self):
         clash = self._hotkey_conflict()
         if clash:
-            QMessageBox.warning(self, tr("settings.title"), tr("settings.hotkey_conflict", names=clash))
+            notify(self, tr("settings.title"), tr("settings.hotkey_conflict", names=clash), "warning")
             return                                  # stay in the dialog: one of the actions would stop working
         self._write_to_cfg()
         self.settings_changed.emit()

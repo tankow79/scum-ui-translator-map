@@ -1258,14 +1258,12 @@ def test_profiles_with_bad_values_are_repaired_and_errors_are_coded(tmp_path):
 
 
 def test_settings_refuse_conflicting_hotkeys(tmp_path, monkeypatch):
-    from PyQt6.QtWidgets import QMessageBox
-
     from ui.settings_window import SettingsDialog
 
     cfg = ConfigManager(str(tmp_path / "cfg.json"))
     dlg = SettingsDialog(cfg)
     shown = []
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: shown.append(a[2]))
+    monkeypatch.setattr("ui.settings_window.notify", lambda *a, **k: shown.append(a[2]))
     dlg.btn_k_map.set_hotkey("F9")                       # the same key as "position setup"
     assert dlg._hotkey_conflict()
     dlg.save_settings()
@@ -1354,3 +1352,21 @@ def test_overlay_never_clips_its_own_panels(tmp_path, lang, font_size, size, unl
         assert window.contains(corner)
     LocalizationManager.get_instance().set_locale("en")
     overlay.close()
+
+
+def test_message_dialogs_are_laid_out_neatly():
+    from ui.dialogs import MessageDialog
+
+    for kind, yes in (("question", "Yes"), ("warning", None)):
+        dialog = MessageDialog(None, "Title", "Delete player «ww» (76561198995660378) with all old nicknames?\nThe nicknames "
+                               "in the databases stay as plain text.", kind, yes)
+        dialog.show()
+        app.processEvents()
+        text = dialog.findChild(QLabel, "text")
+        icon = dialog.findChild(QLabel, "icon")
+        assert text.x() > icon.x() + icon.width() and text.x() + text.width() <= dialog.width()
+        for button in dialog.findChildren(QPushButton):
+            assert button.geometry().right() <= dialog.width() and button.geometry().bottom() <= dialog.height()
+        if yes:
+            assert dialog.btn_no.isDefault() and dialog.btn_yes.x() < dialog.btn_no.x()
+        dialog.close()

@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizeGrip,
@@ -30,6 +29,7 @@ from core.coordinate_parser import POINT_CATEGORIES, MapPoint, get_category_info
 from core.i18n import tr
 from core.points_manager import PointsManager
 from ui.color_picker import open_safe_color_dialog
+from ui.dialogs import ask, notify
 from ui.screen_utils import has_saved_position, screen_geometry_for
 
 
@@ -761,22 +761,10 @@ class PointsWindow(QWidget):
 
     def _ask(self, text: str):
         # The window may sit above the game: keep the dialog on top and do not steal focus rules.
-        box = QMessageBox(self)
-        box.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle(tr("points.title"))
-        box.setText(text)
-        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        box.setDefaultButton(QMessageBox.StandardButton.No)
-        return box.exec()
+        return ask(self, tr("points.title"), text)
 
     def _notify(self, text: str, warning: bool = False):
-        box = QMessageBox(self)
-        box.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        box.setIcon(QMessageBox.Icon.Warning if warning else QMessageBox.Icon.Information)
-        box.setWindowTitle(tr("points.title"))
-        box.setText(text)
-        box.exec()
+        notify(self, tr("points.title"), text, "warning" if warning else "info")
 
     def _export_points(self):
         points = self.points_mgr.get_points()
@@ -796,7 +784,7 @@ class PointsWindow(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, tr("points.btn_import"), "", tr("file_filters.json") + ";;" + tr("file_filters.all"))
         if not path:
             return
-        replace = self._ask(tr("points.import_replace_prompt")) == QMessageBox.StandardButton.Yes
+        replace = self._ask(tr("points.import_replace_prompt"))
         try:
             result = self.points_mgr.import_from_file(path, replace=replace)
         except OSError as exc:

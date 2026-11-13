@@ -4,7 +4,7 @@ import time
 
 import pytest
 from PyQt6.QtCore import QPoint
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication
 
 from core.config_manager import ConfigManager
 from core.coordinate_parser import MapPoint
@@ -243,8 +243,7 @@ def test_players_page_lists_and_confirms_deletes(page, monkeypatch):
     assert steam_profile_url(SID) in pg.tree.itemWidget(renamed, 1).text()
 
     asked = []
-    monkeypatch.setattr(QMessageBox, "question",
-                        lambda *a, **k: asked.append(a[2]) or QMessageBox.StandardButton.No)
+    monkeypatch.setattr("ui.players_page.ask", lambda *a, **k: asked.append(a[2]) or False)
     renamed.child(0).setSelected(True)
     pg._delete_old_nick()
     pg.tree.clearSelection()
@@ -253,7 +252,7 @@ def test_players_page_lists_and_confirms_deletes(page, monkeypatch):
     pg._clear_all()
     assert len(asked) == 3 and len(reg) == 2 and len(reg.get(SID)["previous_nicks"]) == 1  # "No" deletes nothing
 
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr("ui.players_page.ask", lambda *a, **k: True)
     pg.tree.clearSelection()
     _top(pg, "New").child(0).setSelected(True)
     pg._delete_old_nick()

@@ -357,6 +357,7 @@
     "open_steam": "Відкрити профіль Steam",
     "old_nicks": "Попередні нікнейми:"
   },
+  "common": {"yes": "Так", "no": "Ні", "ok": "Гаразд"},
   "overlay_ui": {
     "swap_languages": "Поміняти мови місцями",
     "close": "Закрити"
