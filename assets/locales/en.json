@@ -100,7 +100,7 @@
     "update_available": "🔥 New version available: v{version}!",
     "update_latest": "✅ You have the latest version installed (v{version}).",
     "update_error": "❌ Error: {error}",
-    "save_btn": "💾 Save Settings",
+    "save_btn": "💾 Save",
     "cancel_btn": "Cancel",
     "clear_bind": "— Not assigned —",
     "press_key": "Press key...",
@@ -160,7 +160,9 @@
     "sec_hotkeys": "Keyboard shortcuts",
     "update_interval": "Check for updates every (hours, 0 = only at startup):",
     "nav_players": "Players",
-    "own_nickname_placeholder": "Your in-game nickname"
+    "own_nickname_placeholder": "Your in-game nickname",
+    "nav_sync": "Clan sync",
+    "save_close_btn": "Save and close"
   },
   "map": {
     "custom_color": "🎨 Choose custom color..."
@@ -210,7 +212,11 @@
     "btn_clear": "🧹 Clear",
     "tip_clear": "Delete all saved waypoints",
     "hint_html": "💡 <i>You can rename a waypoint right in its row. Coordinates are saved automatically.</i>",
-    "import_bad_file": "The file is not a valid waypoint file (or contains no usable waypoints)."
+    "import_bad_file": "The file is not a valid waypoint file (or contains no usable waypoints).",
+    "clear_sync_note": "Clan sync is on: this also removes them for every clan member.",
+    "drawer_title": "SCUM chat waypoints",
+    "drawer_tip_open": "Show the waypoint list",
+    "drawer_tip_close": "Hide the waypoint list"
   },
   "update": {
     "title_available": "Update available",
@@ -355,9 +361,24 @@
     "tip_zoom_in": "Zoom in",
     "tip_zoom_out": "Zoom out",
     "open_steam": "Open Steam profile",
-    "old_nicks": "Previous nicknames:"
+    "old_nicks": "Previous nicknames:",
+    "pvp_hide": "🙈 Hide waypoints",
+    "pvp_show": "👁 Show waypoints",
+    "tip_pvp": "PvP mode: hide all waypoints and show only the players of your squad (needs clan sync).",
+    "btn_me": "📍 Me",
+    "tip_me": "Zoom to my position (press Ctrl+C in the game first)",
+    "keep_zoom": "📌 Keep zoom on me",
+    "tip_keep_zoom": "On: the map opens centred on you with the zoom you left. Off: it opens as the whole island.",
+    "squad": "👥 Squad ▾",
+    "tip_squad": "Show a squad member on the map",
+    "squad_empty": "Nobody from the squad is on the map",
+    "me_unknown": "Your position is not known yet: press Ctrl+C in the game (with clan sync on)"
   },
-  "common": {"yes": "Yes", "no": "No", "ok": "OK"},
+  "common": {
+    "yes": "Yes",
+    "no": "No",
+    "ok": "OK"
+  },
   "overlay_ui": {
     "swap_languages": "Swap languages",
     "close": "Close"
@@ -383,5 +404,57 @@
     "moto": "Motorcycle",
     "boat": "Boat",
     "cache": "Cache"
+  },
+  "sync": {
+    "nav": "Clan sync",
+    "title": "Clan sync",
+    "intro": "Share waypoints and live positions with your clan, even if you play in different countries. Everyone who enters the same clan code sees the same waypoints and (if they allow it) where friends are on the map. Everything is encrypted with the code; the relay server only sees unreadable bytes.",
+    "enable": "Turn on clan sync",
+    "code_label": "Clan code",
+    "code_placeholder": "Paste your clan's code, or create a new one",
+    "code_hint": "Give the code only to your clan (private chat). Anyone who has it can see your clan's waypoints and positions.",
+    "btn_generate": "Create new code",
+    "btn_copy": "Copy code",
+    "name_label": "Name on the map",
+    "name_placeholder": "Your nickname",
+    "points_check": "Share and receive waypoints",
+    "points_hint": "A waypoint added, renamed or deleted by anyone appears for everyone. \"Clear all\" clears it for the whole clan.",
+    "position_check": "Share my position and show friends",
+    "position_hint": "In the game press Ctrl+C: your position is copied and picked up by the app. Press it now and then to move your marker.",
+    "auto_check": "Press Ctrl+C in the game for me",
+    "auto_seconds": "How often (seconds)",
+    "auto_warning": "Off by default. It sends a keystroke to the game on its own; anti-cheat systems may dislike any automation, so use it at your own risk. Your clipboard text is put back afterwards.",
+    "broker_label": "Relay server (optional)",
+    "broker_placeholder": "empty = built-in public servers",
+    "broker_hint": "Your own MQTT server, for example mqtts://host:8883. It is only a mailbox: it cannot read anything.",
+    "status_off": "Clan sync is off.",
+    "status_need_code": "Enter or create a clan code to start.",
+    "status_connecting": "Connecting...",
+    "status_online": "Connected. Friends online: {members}.",
+    "status_offline": "No connection, trying again...",
+    "status_error": "Connection problem, trying again...",
+    "status_stopped": "Clan sync is off.",
+    "status_invalid_code": "This is not a valid clan code (check for typos).",
+    "need_valid_code": "Clan sync needs a valid clan code. Paste your clan's code or press \"Create new code\".",
+    "friend_label": "{name}",
+    "btn_create": "+ Create squad",
+    "btn_join": "Join squad (code from the clipboard)",
+    "server_hint": "There is no server to set up: whoever creates the squad just makes a code and sends it to the others (Discord, private chat). They copy it and press \"Join squad\". Everyone is equal.",
+    "create_replace": "A squad code is already set. Create a NEW squad? The old code stops being used here.",
+    "created": "Squad created. The code is copied to the clipboard: send it to your friends, they press \"Join squad\". Press Save to turn it on.",
+    "join_no_code": "Copy the squad code first (the whole text that starts with SCUM1-), then press this button.",
+    "joined": "Code accepted. Press Save to join the squad.",
+    "members_title": "Squad members (double-click the right column to give a member your own name):",
+    "col_name": "Name in the game",
+    "col_alias": "My name for them",
+    "col_state": "Status",
+    "btn_forget": "Remove selected member from the list",
+    "forget_confirm": "Remove this member and the name you gave them from your list?",
+    "alias_hint": "The name you give is seen only by you: a friend can name you differently on their map.",
+    "alias_tip": "Your own name for this teammate (empty = the name they use)",
+    "state_online": "online",
+    "state_offline": "not seen now",
+    "advanced_show": "More options ▾",
+    "advanced_hide": "Fewer options ▴"
   }
 }

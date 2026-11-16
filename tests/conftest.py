@@ -39,3 +39,24 @@ def offline_translation(monkeypatch, request):
         return _FakeResponse([[translated, detected]])
 
     monkeypatch.setattr(requests.Session, "get", fake_get)
+
+
+@pytest.fixture(autouse=True)
+def _destroy_leftover_widgets():
+    """A test that forgets to close its windows must not leave live widgets (and layouts) for the next test to trip over."""
+    yield
+    try:
+        from PyQt6.QtCore import QCoreApplication, QEvent
+        from PyQt6.QtWidgets import QApplication
+    except ImportError:
+        return
+    app = QApplication.instance()
+    if app is None:
+        return
+    for widget in app.topLevelWidgets():
+        try:
+            widget.close()
+            widget.deleteLater()
+        except RuntimeError:
+            pass
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)

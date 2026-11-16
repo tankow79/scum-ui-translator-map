@@ -40,6 +40,8 @@ def _profile_error_text(exc: Exception) -> str:
 class LanguageSelector(Section):
     """Interface language picker. Scales to any number of installed locales."""
 
+    language_picked = pyqtSignal(str)     # the user chose a language in the list (not set by code)
+
     def __init__(self, parent=None):
         super().__init__(tr("settings.sec_language"), parent)
         self.combo = QComboBox()
@@ -47,6 +49,7 @@ class LanguageSelector(Section):
         for code, name in LocalizationManager.get_instance().available_locales():
             self.combo.addItem(f"{name}  ({code})", code)
         self.add_field(tr("settings.ui_language"), self.combo, tr("settings.language_hint"))
+        self.combo.activated.connect(lambda _i: self.language_picked.emit(self.selected_code()))
 
         btn = make_button(tr("settings.language_open_folder"))
         btn.clicked.connect(self._open_folder)

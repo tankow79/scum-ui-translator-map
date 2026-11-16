@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🗺️ SCUM Tactical Map & Real-Time Chat Translator 💬
+# SCUM Tactical Map & Chat Translator
 
 [![Release](https://img.shields.io/github/v/release/tankow79/scum-ui-translator-map?style=for-the-badge&color=blue)](https://github.com/tankow79/scum-ui-translator-map/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/tankow79/scum-ui-translator-map/total?style=for-the-badge&color=success)](https://github.com/tankow79/scum-ui-translator-map/releases)
@@ -8,224 +8,118 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/tankow79/scum-ui-translator-map/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/tankow79/scum-ui-translator-map/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
-**An all-in-one in-game tactical suite for SCUM (Steam): an interactive island map with automatic GPS capture from chat, a sector grid (D0–Z4 / k1–k9), categorized waypoints, and a transparent real-time chat translator overlay.**
+A free Windows overlay for SCUM (Steam). It translates in-game chat on the fly, turns coordinates from chat into pins on an island map, and can share those pins and your position with friends.
 
-🌐 **README languages:** **English** · [Українська](docs/readme/README.uk.md) · [add yours](docs/readme/README.md)
-
-[Quick start](#-quick-start-1-minute) · [Is it a virus?](#-windows-says-protected-your-pc--is-this-a-virus) · [Download](https://github.com/tankow79/scum-ui-translator-map/releases/latest)
+**English** · [Українська](docs/readme/README.uk.md)
 
 </div>
 
----
+![Island map with waypoints](docs/images/en/map.png)
 
-## 🚀 Quick start
+## Install
 
-1. Open the **[latest release](https://github.com/tankow79/scum-ui-translator-map/releases/latest)** and download **`SCUM_Chat_Translator.exe`** (or the `.zip` package, which contains the same exe plus instructions).
-2. Put the file into **any folder you like** (for example `C:\Games\SCUM_Translator\`). Do not run it from inside the zip: extract it first.
-3. **Double-click `SCUM_Chat_Translator.exe`.**
-4. The first time, Windows shows a blue/green **"Windows protected your PC"** window. **This is normal and expected**: follow the 3 clicks in the next section.
-5. A blue **`SC`** icon appears in the system tray (next to the clock). Done: the app is running.
-6. Start SCUM. The chat translator and the map (`Ctrl + M`) work automatically once the game window is in the foreground.
-7. Optional: right-click the tray icon → **Settings** to pick your translation language, hotkeys and overlay look. The **interface language (English / Українська)** is under **Settings → General → Language**.
+1. Download `SCUM_Chat_Translator.exe` from the [latest release](https://github.com/tankow79/scum-ui-translator-map/releases/latest). The `.zip` holds the same exe plus a short instruction. If you take the zip, extract it first.
+2. Put the exe in a folder you can write to, for example `C:\Games\SCUM_Translator\`. Not `Program Files`, and not inside the archive.
+3. Double-click it. A blue `SC` icon appears in the system tray, next to the clock. That is the whole app.
+4. Start SCUM. Chat translation and the map (`Ctrl + M`) work as soon as the game window is in front.
 
-The app creates its own `config.json`, `points.json`, `profiles.json` and `players.json` next to the exe on first use. You do not need to download or copy them.
+The first time you run it, Windows may show "Windows protected your PC". Click **More info**, then **Run anyway**. It happens once per file. More on that below.
 
----
+On first start the interface language follows Windows: Ukrainian Windows gives you Ukrainian, anything else gives English. You can change it any time in **Settings → General → Language**.
 
-## 🛡️ Windows says "protected your PC" — is this a virus?
+The app creates `config.json`, `points.json`, `profiles.json` and `players.json` next to the exe. There is nothing else to copy or configure. Run SCUM in borderless or windowed mode, because exclusive fullscreen cannot show overlays.
 
-<table>
-<tr>
-<td>
+## Is it a virus?
 
-### ✅ No. This is Windows SmartScreen, and it is normal for new free programs.
+No. SmartScreen warns about every program that has no paid code-signing certificate and not many downloads yet. This project is free and unsigned, so Windows complains. It does not mean anything was detected.
 
-**What you see:** *"Windows protected your PC. Microsoft Defender SmartScreen prevented an unrecognized app from starting."*
+Why you can trust it: all the code is in this repository, and you can build the exe yourself. The app does not inject anything, touch game memory or hook the game. It reads SCUM's normal text log and draws its own transparent window. It talks to the network only for Google Translate (the chat text you translate), the GitHub Releases API (update check) and, if you turn it on, the relay servers used by clan sync. GitHub shows a SHA-256 for every release file, so you can compare it with `Get-FileHash .\SCUM_Chat_Translator.exe`.
 
-**Why it appears:** SmartScreen warns about **every** program that is not signed with a paid commercial code-signing certificate and has not yet been downloaded by many people. This project is free, open source and unsigned, so Windows shows the warning for it. **It does not mean a virus was detected.**
+If there is no "More info" link, or the file does not open at all: right-click the exe, choose **Properties**, tick **Unblock** at the bottom of the General tab, press OK and try again. If your antivirus eats the file, add the folder to its exclusions and download again. Do not turn Defender off and do not install any certificates; neither is needed. Take the app only from this repository's [Releases](https://github.com/tankow79/scum-ui-translator-map/releases) page.
 
-**Why it is safe:**
-- 🔓 **100 % open source.** Every line of code is in this repository. You can read it or build the exe yourself (see [Build from source](#-build-from-source)).
-- 🚫 **No injection, no memory editing, no hooks.** The app only reads SCUM's normal text log file and draws a separate transparent window.
-- 🔐 **Verifiable download.** GitHub shows a SHA-256 digest for every file on the release page; you can compare it with your download (`Get-FileHash .\SCUM_Chat_Translator.exe` in PowerShell).
-- 🌐 Network use is limited to Google Translate (chat text you choose to translate) and the GitHub Releases API (update check).
+## Disclaimer
 
-</td>
-</tr>
-</table>
+This software is for education, research and making chat more accessible. The author takes no responsibility for anything that comes from using it, including bans by Easy Anti-Cheat or BattlEye, account or server penalties, lost data or crashes. You use it at your own risk and you are responsible for following the game's rules and your server's rules.
 
-### 🖱️ How to start the program anyway (3 clicks)
+For the record: no DLL injection, no process memory editing, no API hooking. The app only reads the log the game writes (`%LOCALAPPDATA%\SCUM\Saved\Logs\SCUM.log`) and shows an external window.
 
-<img src="docs/images/smartscreen-warning.png" alt="Windows SmartScreen warning with the More info link" width="420">
+## The map
 
-*(Screenshot from a Ukrainian Windows. On English Windows the same window says "Windows protected your PC" with a **More info** link and a **Don't run** button.)*
+![Map settings and waypoint list](docs/images/en/points.png)
 
-1. In the warning window click **"More info"** (Ukrainian Windows: **"Докладніше"**). The text link is under the description.
-2. A new button appears. Click **"Run anyway"** (Ukrainian Windows: **"Виконати все одно"**).
-3. The program starts. Windows remembers your choice for this file, so **you will not see the warning again.**
+Press `Ctrl + M` in game to open the map over the screen. It hides itself when you Alt-Tab away. You can also open it from the tray menu with SCUM closed.
 
-> [!TIP]
-> **No "More info" link, or the file will not open at all?** Right-click the `.exe` → **Properties** → at the bottom of the *General* tab tick **Unblock** → **OK**, then start it again.
+When anyone posts coordinates in chat, like `car {X=174468 Y=345933 Z=34103}`, the app picks them up and drops a pin. The word next to the coordinates becomes the name, and the category follows from it: base, car, plane, motorcycle, boat, cache or a plain pin. The grid is the official one: sectors D0 to Z4 and keypads k1 to k9, with the sector shown as you move the cursor. There are two styles, satellite and tactical.
 
-> [!NOTE]
-> **An antivirus removed or blocked the file?** Add the folder with the exe to your antivirus exclusions and download the file again. New unsigned programs are sometimes flagged by heuristics; the source code is here to verify.
+The waypoint list is a drawer under the map. Click the bar at the bottom and it slides up. Rename a waypoint right in its row, change its colour or category, search by name or sector, press **On Map** to jump to it, or **Copy** to put the game coordinates on your clipboard. Everything is saved in `points.json`, and you can import and export waypoints as JSON.
 
-> [!IMPORTANT]
-> Do **not** disable Windows Defender and do **not** install any "certificate" to run this app. Neither is needed. You only click **More info → Run anyway** once. Download the app only from **this repository's [Releases](https://github.com/tankow79/scum-ui-translator-map/releases)** page.
+For bases you can type the nicknames of the people who live there. The app matches them to SteamIDs from the game log and follows renames, so a base keeps its owners even when they change their names. Hover a base to see them.
 
----
+The **Me** button zooms to your own position, **Squad** zooms to a friend, and **Hide waypoints** is the PvP mode: it clears the pins and the list so only players are shown.
 
-## ⚠️ DISCLAIMER OF LIABILITY
+## Chat translator
 
-> [!WARNING]
-> **IMPORTANT: DISCLAIMER OF LIABILITY!**  
-> This software is created strictly for educational, research, and communication accessibility purposes.  
-> **The author / developer assumes NO responsibility or liability** for the use of this software, scripts, or binaries, nor for any direct or indirect consequences resulting from its use, including but not limited to:  
-> - In-game bans, kicks, or suspensions by Easy Anti-Cheat (EAC) or BattlEye;  
-> - Steam or SCUM account penalties or restrictions;  
-> - Administrative sanctions or blacklisting on private or official game servers;  
-> - Data loss, game crashes, or system instability.  
-> 
-> **You run and use this software entirely at your own discretion and your own risk!**  
-> This application does NOT inject code into game memory (no DLL injection, no process memory editing, no API hooking). It solely reads the standard text log file generated by the game engine (`%LOCALAPPDATA%\SCUM\Saved\Logs\SCUM.log`) and renders an external transparent Windows overlay using official Windows APIs. Nonetheless, users are solely responsible for ensuring compliance with game terms of service and server rules.
+![Translated chat overlay](docs/images/en/chat.png)
 
----
+Chat appears over the game with the original text under each line. It copies the look of the real chat (Bahnschrift font, black outline, the same timestamp) and fades after 10 seconds by default. Squadmates you list in **Settings → Chat → Players** are lime green, other players are blue, server messages are yellow. The game log does not say which channel a message came from, so local and global chat look the same.
 
-## 🗺️ Core Feature 1: Interactive Tactical Island Map & GPS Coordinates
+Press `T` and the game chat opens together with a quick input box. Type in your language, and the translation is copied to the clipboard when you press `Enter`. Paste it into the game with `Ctrl + V`. Typing stays smooth because translation runs in the background. `Escape` closes everything and hands the mouse back to the game.
 
-The integrated Tactical Map turns SCUM Island navigation and squad coordination into a fast, effortless experience:
+Translation covers more than 100 languages through Google Translate, independent of the interface language. Messages already in your language are skipped. Players on your blacklist show up instantly in the original text, and blocked words can be masked, hidden or left untranslated. If you only want the map, turn on "Map only" and the app stops reading the log completely.
 
-### 📍 Key Map Capabilities
-* **In-Game Overlay (`Ctrl + M`):** Instantly toggle the tactical map and saved waypoints docked directly on your screen while playing SCUM. Auto-hides when Alt-Tabbing away from the game.
-* **Standalone Desktop Map:** Open, inspect, and organize coordinates directly from the Windows System Tray menu anytime, even when SCUM is closed or minimized.
-* **In-App Safe Color Dialog:** Custom color picker operates with `WindowStaysOnTopHint`, completely eliminating accidental fullscreen game minimization (Alt-Tab drop).
-* **Dual Map Styles:** Switch between high-resolution **Satellite (Regular)** and **Tactical** topographic views.
-* **Official SCUM Coordinate Grid:**
-  * Sectors: **D0 to Z4** calibrated to game world coordinates.
-  * Keypads: **k1 to k9** sub-grid matching standard military calling systems and `scum-map.com`.
-  * Real-time cursor coordinates and sector/keypad HUD readout on mouse hover.
-* **Automatic GPS Chat Parser:**
-  * Automatically detects any in-game coordinates shared in chat formatted as `{X=... Y=... Z=...|...}` (even inside parenthesis or brackets).
-  * Extracts the waypoint title from chat prefixes or suffixes (e.g. `car{X=...}`, `{X=...} base`).
-* **Smart Category Auto-Detection:**
-  * 🏠 **Base** (`#a855f7`): base, home, camp, house;
-  * 🚗 **Car** (`#f59e0b`): car, auto, vehicle, suv, truck, pickup;
-  * ✈️ **Plane** (`#0ea5e9`): plane, airplane;
-  * 🏍️ **Motorcycle** (`#f97316`): moto, motorcycle, bike;
-  * 🚤 **Boat** (`#06b6d4`): boat, ship, yacht;
-  * 📦 **Cache / Loot** (`#10b981`): cache, loot, chest, stash;
-  * 📍 **Default** (`#38bdf8`): generic waypoint marker.
-* **Waypoint Management Window:**
-  * Visual marker pins with sharp anchor tips placed accurately on coordinates.
-  * Instant color picker (Red, Green, Blue, Purple, Gold, Cyan, Orange).
-  * Live inline name editing with automatic saving.
-  * **Base players:** type nicknames for a base. The app links them to SteamIDs collected from the game logs and follows renames automatically. Hover a base to see its players: 🔗 opens the Steam profile, and a name with ▾ lists the old nicknames with the date of each change.
-  * Search & filter waypoints by name, sector, or player tag.
-  * **"On Map"** button: smoothly centers and zooms the map to any pin.
-  * **"Copy"** button: copies raw game coordinates to clipboard for sharing.
-  * All waypoints persist automatically across sessions in `points.json`.
+Also in the tray menu: a chat history window with search, filters and export to TXT, CSV or JSON, and profiles, which are named presets for translation, filters and overlay look.
 
----
+## Clan sync
 
-## 💬 Core Feature 2: Real-Time Chat Translator Overlay
+![Clan sync settings](docs/images/en/settings-clan.png)
 
-Overcome language barriers on international SCUM servers without leaving the game:
+Friends who play from different countries can share waypoints and see each other on the map. One person presses **Create squad** in **Settings → Clan sync** and sends the code to the others, who press **Join squad**. After that everyone sees the same waypoints, with adds, renames, colour changes and deletes arriving live. Someone who joins late gets everything, and changes made offline go out when the connection comes back. If two people edit the same point, the newest edit wins.
 
-### ⚡ Key Translation Capabilities
-* **Live In-Game HUD Overlay:** Displays translated chat messages directly over your game screen with customizable background opacity and outline contrast.
-* **In-game chat look:** the overlay uses the same font family (Bahnschrift), the partial black outline and the `[dd/mm/yyyy - HH:MM:SS]` timestamp as the game chat. Squadmates you list in **Settings → Chat → Players** are lime green (`#c2f800`), other chat is blue (`#00e6f3`), server messages are yellow. The game log does not say which channel a message came from, so local chat cannot be told apart from global chat.
-* **True-to-Game 10s Fade Behavior:** Incoming messages appear, stay visible for a configured timeout (default: 10 seconds), and fade away naturally just like native SCUM chat.
-* **Game Chat Synchronization (`T` and `Escape`):**
-  * Pressing **`T`** opens SCUM chat, reveals previous chat history on the overlay, and summons the Quick Chat input box.
-  * Pressing **`Escape`** instantly dismisses all overlays and immediately restores mouse control and aim back to the game without lag.
-* **Zero-Lag Asynchronous Typing (0ms Input Lag):**
-  * Fluid 60–144+ FPS typing in the Quick Chat bar with background asynchronous translation.
-  * Automatically copies translated text to your clipboard upon pressing **`Enter`**.
-  * Paste (`Ctrl + V`) and send directly in SCUM.
-* **Two-Way Language Support:** Supports over 100 languages via Google Translate (Ukrainian, English, German, Polish, Spanish, French, Chinese, Turkish, etc.).
-* **Instant Blacklist Bypass:** Messages from players on your blacklist bypass external translation API and appear immediately in original text without translation delays.
-* **"Map Only" Mode:** Option to completely disable the chat overlay and cease all log file polling, saving CPU cycles and SSD operations.
-* **NVIDIA-Style Status Indicator:** Subtle `[● ON]` (green) / `[● OFF]` (red) badge indicating active status.
+To show your position, press `Ctrl + C` in game. The game copies your coordinates to the clipboard, the app reads them, and friends see your marker with your name and direction. It fades when the data gets old. There is an optional "press Ctrl+C for me" mode, off by default; leave it off if you worry about anti-cheat. The members table lets you give each friend your own name. You can call someone Andriy while he calls you Oleg.
 
----
+There is no server to host. The app uses public MQTT relay servers as an encrypted mailbox, talks to two of them at once and drops duplicates, so one dead relay does not cut the squad off. The relays only see unreadable bytes. You can set your own relay in the advanced options.
 
----
+Keep in mind that the clan code is a shared secret. Anyone who has it can read your squad's waypoints and add their own, so give it only to people you trust. Joining a squad also publishes the waypoints you already have, and **Clear all** clears them for everyone.
 
-## 🌐 Core Feature 3: Language Support (i18n)
+## Settings
 
-* **Language tab in Settings:** Pick the interface language at any time. The app ships in English; every
-  `assets/locales/<code>.json` file is discovered automatically, so adding a language needs no code changes
-  (see [docs/ADDING_A_LANGUAGE.md](docs/ADDING_A_LANGUAGE.md)). Missing keys fall back to English.
-* **Chat translation** supports 100+ languages independently of the interface language.
+![General settings](docs/images/en/settings-general.png)
 
----
+Right-click the tray icon and open **Settings**. **Save** keeps the window open, **Save and close** closes it. Every feature has its own switch, so you can turn off whatever you do not use. The Players page keeps every nickname the game log has shown, linked to the permanent SteamID, with a history of old names. You can turn collecting off, and each delete asks first.
 
-## 🔄 Core Feature 4: 1-Click Auto-Update & 100% Data Preservation
+## Hotkeys
 
-* **Tray notification:** An amber `▲` badge appears on the tray icon when a new release is published on GitHub; the app also re-checks in the background every few hours.
-* **Steam-style update window:** compact progress bar with speed and ETA, cancel / retry, release notes on demand.
-* **Real one-click install:** the build is downloaded to `%LOCALAPPDATA%\SCUM_Chat_Translator\updates`, verified (size, executable header, SHA-256), self-tested (the new build is started once with `--smoke-test` before it replaces the current one), swapped in place with automatic rollback (the previous build is kept until the new one has run healthy), and the app restarts by itself. The Normal / Portable build is matched automatically.
-* **Strict user data protection:** `config.json`, `points.json`, `profiles.json` and `players.json` are never overwritten.
-
----
-
-## 🧰 Core Feature 5: Chat Tools (History, Filters, Profiles)
-
-* **Chat history window** (tray menu): search, filter by player / type / translated-only, export to TXT, CSV or JSON. Optional on-disk persistence with a size limit.
-* **Blocked words:** mask them, hide the message or show it untranslated; whole-word and case options.
-* **Language auto-detection:** skips translation when a message is already in your language (or in languages you list). Works offline for obvious scripts and uses the translation service's result otherwise.
-* **Players database (Settings → Players):** every nickname the game log shows is stored with the player's permanent SteamID. Renamed players expand into a list of old nicknames with dates; you can delete old nicknames, a player, or the whole base (always asked first). The **Collect SteamIDs** switch (on by default) turns collecting off: nothing is read or stored. Chat history is saved to `chat_history.jsonl` in `%LOCALAPPDATA%\SCUM_Chat_Translator` unless you turn that off in Settings → Chat.
- * **Profiles:** save named presets (translation, filters, overlay look) and switch from Settings or the tray menu.
-* **Waypoint import / export** (JSON) with merge or replace.
-* Every feature has its own switch in Settings, so each user can tune or disable it.
-
----
-
-## 🛡️ Core Feature 6: Windows Autostart
-
-* **Seamless Autostart:** Optional startup with Windows via `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (no admin rights required).
-
----
-
----
-
-## ⌨️ In-Game Controls & Hotkeys
-
-| Hotkey | In-Game Action |
+| Key | What it does |
 |:---:|:---|
-| **`Ctrl + M`** | Open / Hide Interactive Tactical SCUM Map & Saved Points list. |
-| **`T`** | Open SCUM game chat + open Quick Chat translation box & reveal history. |
-| **`Enter`** | Copy translated message to clipboard ➔ close Quick Chat ➔ paste `Ctrl+V` into SCUM. |
-| **`Escape`** | Instantly dismiss Quick Chat, Map, or Settings and restore mouse control to SCUM. |
-| **`F8`** | Toggle HUD overlay visibility (badge indicates green ON or red OFF state). |
-| **`F9`** | Position Setup Mode (Unlock / Lock): drag overlay, resize box, or send a test message. |
+| `Ctrl + M` | Show or hide the map and waypoint list |
+| `T` | Open game chat and the quick translation box |
+| `Enter` | Copy the translation, close the box, then paste with `Ctrl + V` |
+| `Escape` | Close the box, map or settings and give the mouse back to the game |
+| `F8` | Show or hide the chat overlay |
+| `F9` | Unlock the overlay to drag and resize it, lock it again |
+| `Ctrl + C` | Share your position with the squad (needs clan sync) |
 
----
+You can change the main ones in Settings.
 
----
+## Updates
 
-## 🔄 Updating
+When a new version is out, an amber `▲` shows on the tray icon. Click it, press **Update now**, and the app downloads the new build, checks its size and SHA-256, runs it once as a self-test, swaps it in and restarts. If anything fails, the old build stays. You can also check by hand in **Settings → General**. Your config, waypoints, profiles and players are never overwritten.
 
-* When a new version is released, an amber `▲` appears on the tray icon and a notification pops up. Click it (or tray menu → **Update**) and press **Update now**: the app downloads, verifies and installs the new version, then restarts itself. Your settings, waypoints and profiles stay untouched.
-* You can also check manually: **Settings → Updates → Check for updates**.
-* Updating by hand is just as easy: download the new `.exe` and replace the old one. `config.json`, `points.json`, `profiles.json` and `players.json` live next to the exe and are kept.
-* Where files live: downloads go to `%LOCALAPPDATA%\SCUM_Chat_Translator\updates`, the log file to `%LOCALAPPDATA%\SCUM_Chat_Translator\logs\app.log`, chat history to `%LOCALAPPDATA%\SCUM_Chat_Translator\chat_history.jsonl`.
+Updating by hand works too: replace the exe with the new one. Downloads go to `%LOCALAPPDATA%\SCUM_Chat_Translator\updates`, the log is in `%LOCALAPPDATA%\SCUM_Chat_Translator\logs\app.log`, and chat history is in `chat_history.jsonl` in the same folder (switch it off in Settings → Chat). The app can also start with Windows; that uses the current user's `Run` registry key and needs no admin rights.
 
-## 🧯 Troubleshooting
+## Troubleshooting
 
 | Problem | What to do |
 |---|---|
-| The program does not start / nothing happens | Look for the blue `SC` icon in the tray (click the `^` arrow). If another copy is running it is already there. See also the SmartScreen steps above. |
-| No chat translation in game | Check **Settings → General**: the log path must point to `SCUM.log`, and "Map only" mode must be off. Chat must be sent while the game is running. |
-| Overlay is not visible | Press `F8`. Run SCUM in **borderless / windowed** mode (exclusive fullscreen cannot show overlays). |
-| Update does not install | Make sure the exe is in a folder you can write to (not `Program Files`). Details are in `%LOCALAPPDATA%\SCUM_Chat_Translator\logs\app.log`. |
-| Something else | [Open an issue](https://github.com/tankow79/scum-ui-translator-map/issues/new/choose) and attach the log file (remove private data). |
+| Nothing happens on start | Look for the blue `SC` icon in the tray (click the `^` arrow). If another copy is running, it is already there. |
+| No translation in game | In **Settings → General** the log path must point to `SCUM.log` and "Map only" must be off. |
+| No overlay | Press `F8`, and run SCUM in borderless or windowed mode. |
+| Update does not install | The exe must sit in a folder you can write to. Details are in `app.log`. |
+| Anything else | [Open an issue](https://github.com/tankow79/scum-ui-translator-map/issues/new/choose) and attach the log with private data removed. |
 
----
+## Build from source
 
-## 🧑‍💻 Build from source
-
-Requirements: Windows 10/11 (64-bit), Python 3.12–3.13, Git.
+You need Windows 10 or 11 (64-bit), Python 3.12–3.13 and Git.
 
 ```powershell
 git clone https://github.com/tankow79/scum-ui-translator-map.git
@@ -233,70 +127,62 @@ cd scum-ui-translator-map
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
-python main.py          # or double-click run.bat
+python main.py
 ```
 
-Checks and build:
+Checks and the exe build:
 
 ```powershell
 python -m ruff check .
 python -m pytest
-python -m PyInstaller --noconfirm SCUM_Chat_Translator.spec     # -> dist\SCUM_Chat_Translator.exe
+python -m PyInstaller --noconfirm SCUM_Chat_Translator.spec
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/ADDING_A_LANGUAGE.md](docs/ADDING_A_LANGUAGE.md).
+The result is `dist\SCUM_Chat_Translator.exe`. See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/ADDING_A_LANGUAGE.md](docs/ADDING_A_LANGUAGE.md). Adding a language is one JSON file in `assets/locales/`; the app finds it by itself.
 
----
+## config.json
 
-## ⚙️ Configuration Guide (`config.json`)
+| Parameter | Default | Description |
+|---|:---:|---|
+| `log_file_path` | `%LOCALAPPDATA%\SCUM\...` | Path to the SCUM log. Environment variables are expanded. |
+| `target_language` | `"uk"` | Language incoming chat is translated into. |
+| `source_language` | `"auto"` | Language of incoming chat (`auto` detects it). |
+| `outgoing_my_lang` | `"uk"` | Your language in the quick input (`T`). |
+| `outgoing_target_lang` | `"en"` | Language your typed messages are translated into. |
+| `message_fade_timeout` | `10` | Seconds a message stays on screen (0 = never fades). |
+| `font_size` | `18` | Overlay font size. |
+| `font_bold` | `true` | Bold overlay text. |
+| `text_outline` | `true` | Black outline around overlay text. |
+| `bg_opacity` | `0.0` | Overlay background opacity (0 = transparent). |
+| `own_nickname` | `""` | Your in-game nickname. |
+| `ignore_own_messages` | `false` | Do not translate your own messages. |
+| `blacklist_nicknames` | `[]` | Players hidden from the overlay. |
+| `hotkey_toggle_map` | `"Ctrl+M"` | Show or hide the map. |
+| `hotkey_quick_chat` | `"T"` | Open chat and the quick box. |
+| `hotkey_toggle_visibility` | `"F8"` | Show or hide the overlay. |
+| `hotkey_toggle_lock` | `"F9"` | Unlock or lock the overlay. |
+| `map_variant` | `"regular"` | `regular` (satellite) or `tactical`. |
+| `map_show_grid` | `true` | Show the D0–Z4 sector grid. |
+| `map_show_keypads` | `true` | Show the k1–k9 keypads. |
+| `auto_focus_new_point` | `true` | Pan the map to a newly detected coordinate. |
+| `enable_chat_translator` | `true` | Turn off for "Map only" mode. |
+| `ui_language` | `"en"` | Interface language (any file in `assets/locales/`). |
+| `auto_start` | `true` | Start with Windows. |
+| `auto_check_updates` | `true` | Check for updates in the background. |
+| `update_check_interval_hours` | `6` | Hours between update checks (`0` = only at start). |
+| `blacklist_words_enabled` | `false` | Turn on the blocked-word filter. |
+| `blacklist_words` | `[]` | Blocked words and phrases. |
+| `blacklist_words_action` | `"mask"` | `mask`, `hide` or `no_translate`. |
+| `blacklist_words_whole_word` | `true` | Match whole words only. |
+| `blacklist_words_case_sensitive` | `false` | Case-sensitive matching. |
+| `autodetect_enabled` | `true` | Skip messages already in a language you excluded. |
+| `autodetect_skip_target_language` | `true` | Treat your target language as "no translation needed". |
+| `autodetect_skip_languages` | `[]` | Extra language codes to skip. |
+| `autodetect_min_length` | `3` | Minimum letters before detection is tried. |
+| `history_enabled` | `true` | Record chat history. |
+| `history_save_to_disk` | `true` | Keep history between sessions. |
+| `history_max_entries` | `5000` | Maximum stored messages. |
 
-| Parameter | Type | Default | Description |
-|---|:---:|:---:|---|
-| `log_file_path` | string | `%LOCALAPPDATA%\SCUM\...` | Path to SCUM game log file. Resolves environment variables automatically. |
-| `target_language` | string | `"uk"` | Language for translating incoming game chat messages. |
-| `source_language` | string | `"auto"` | Original chat language (`auto` for auto-detection). |
-| `outgoing_my_lang` | string | `"uk"` | Your native language for outgoing Quick Chat (`T`). |
-| `outgoing_target_lang` | string | `"en"` | Target language your typed messages are translated into. |
-| `message_fade_timeout` | int | `10` | Message display duration on HUD in seconds (0 = never fade). |
-| `font_size` | int | `18` | Font size of chat overlay. |
-| `font_bold` | bool | `true` | Bold font weight for enhanced contrast against game background. |
-| `text_outline` | bool | `true` | High-contrast black outline around HUD text. |
-| `bg_opacity` | float | `0.0` | Background opacity (0.0 = completely transparent). |
-| `own_nickname` | string | `""` | Your in-game character nickname. |
-| `ignore_own_messages` | bool | `false` | Skip translating your own messages. |
-| `blacklist_nicknames` | list | `[]` | List of player nicknames to hide from the chat overlay. |
-| `hotkey_toggle_map` | string | `"Ctrl+M"` | Hotkey to toggle the Interactive Tactical Map and Points list. |
-| `hotkey_quick_chat` | string | `"T"` | Hotkey to open in-game chat and quick translator. |
-| `hotkey_toggle_visibility`| string | `"F8"` | Hotkey to hide / unhide chat overlay. |
-| `hotkey_toggle_lock` | string | `"F9"` | Hotkey to unlock / lock overlay for moving and resizing. |
-| `map_variant` | string | `"regular"` | Map style (`regular` for satellite, `tactical` for tactical topo). |
-| `map_show_grid` | bool | `true` | Show D0..Z4 sector grid lines. |
-| `map_show_keypads` | bool | `true` | Show k1..k9 keypad sub-grid lines. |
-| `auto_focus_new_point` | bool | `true` | Automatically pan and focus map on newly detected coordinates. |
-| `enable_chat_translator`| bool | `true` | Toggle chat translator overlay (uncheck for pure "Map Only" mode). |
-| `ui_language` | string | `"en"` | Interface language code (any file in `assets/locales/`). |
-| `auto_start` | bool | `true` | Automatically start application with Windows boot. |
-| `auto_check_updates` | bool | `true` | Check for updates automatically in background on launch. |
-| `update_check_interval_hours` | int | `6` | Background update re-check interval (`0` = only at startup). |
-| `blacklist_words_enabled` | bool | `false` | Enable the blocked-word filter. |
-| `blacklist_words` | list | `[]` | Blocked words / phrases. |
-| `blacklist_words_action` | string | `"mask"` | `mask`, `hide` or `no_translate`. |
-| `blacklist_words_whole_word` | bool | `true` | Match whole words only. |
-| `blacklist_words_case_sensitive` | bool | `false` | Case-sensitive matching. |
-| `autodetect_enabled` | bool | `true` | Skip translation for messages already in an excluded language. |
-| `autodetect_skip_target_language` | bool | `true` | Treat your target language as "no translation needed". |
-| `autodetect_skip_languages` | list | `[]` | Extra language codes to skip. |
-| `autodetect_min_length` | int | `3` | Minimum letters before detection is attempted. |
-| `history_enabled` | bool | `true` | Record chat history. |
-| `history_save_to_disk` | bool | `true` | Keep history between sessions. |
-| `history_max_entries` | int | `5000` | Maximum stored messages. |
+## License
 
----
-
-<br>
-
----
-
-## 📄 License
-
-[MIT](LICENSE). Changes between versions: [CHANGELOG.md](CHANGELOG.md).
+[MIT](LICENSE). What changed between versions: [CHANGELOG.md](CHANGELOG.md).

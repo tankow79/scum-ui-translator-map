@@ -22,14 +22,16 @@ from core.config_manager import ConfigManager, get_portable_config_path
 from core.controller import AppController
 from core.coordinate_parser import parse_chat_coordinate  # noqa: F401  (kept for plugins/tests)
 from core.hotkey_manager import GlobalHotkeyManager
-from core.i18n import LocalizationManager, tr
+from core.i18n import LocalizationManager, pick_language, system_language_code, tr
 from core.log_parser import ScumLogParser
 from core.logging_setup import setup_logging
 from core.message_filter import ChatFilter
 from core.paths import get_user_data_dir
 from core.players import PlayerRegistry
 from core.points_manager import PointsManager
+from core.position_source import parse_position
 from core.profiles import ProfileManager
+from core.sync_engine import SyncEngine, default_meta_path
 from core.translator import GoogleTranslatorEngine
 from core.updater import UpdateChecker, UpdateInfo, UpdateInstaller, localize_error
 from core.version import __version__
@@ -38,7 +40,7 @@ from ui.dialogs import notify
 from ui.history_window import HistoryWindow
 from ui.map_window import MapWindow
 from ui.overlay import ChatOverlay
-from ui.points_window import PointsWindow
+from ui.qt_translation import apply_qt_language
 from ui.settings_window import SettingsDialog
 from ui.status_badge import StatusBadge
 from ui.theme import APP_QSS, MENU_QSS, mnemonic_safe
@@ -189,7 +191,12 @@ def _run():
             f.write("[2026.11.13-01.54.49:390][201]LogSCUM: Message: SmokeTester: hello world\n")
         cfg.set("log_file_path", sample_log)
         cfg.set("auto_check_updates", False)
+    if not smoke and not cfg.language_chosen:
+        # first start: speak the language of Windows when we have it (Ukrainian, English), English otherwise
+        lang_manager = LocalizationManager.get_instance()
+        cfg.set("ui_language", pick_language(system_language_code(), [code for code, _ in lang_manager.available_locales()]))
     LocalizationManager.get_instance().set_locale(cfg.get("ui_language", "en"))
+    apply_qt_language(cfg.get("ui_language", "en"))
     if not smoke:
         UpdateInstaller.cleanup_leftovers()
 
@@ -240,7 +247,7 @@ def _run():
     player_registry = PlayerRegistry()
     points_mgr = PointsManager(registry=player_registry)
     map_win = MapWindow(cfg, points_mgr)
-    points_win = PointsWindow(cfg, points_mgr, parent=map_win)
+    points_win = map_win.drawer.points             # the waypoint list is a drawer under the map
 
     # Link between the waypoints list window and the map
     points_win.point_focus_requested.connect(map_win.focus_point)
@@ -261,9 +268,8 @@ def _run():
 
     def toggle_map_and_points(force_standalone: bool = False):
         nonlocal is_standalone_map_mode
-        if map_win.isVisible() or points_win.isVisible():
+        if map_win.isVisible():
             map_win.hide()
-            points_win.hide()
             is_standalone_map_mode = False
             restore_game_focus()
         else:
@@ -276,33 +282,23 @@ def _run():
 
             try:
                 fg = user32.GetForegroundWindow()
-                if fg and fg != int(map_win.winId()) and fg != int(points_win.winId()):
+                if fg and fg != int(map_win.winId()):
                     set_last_game_hwnd(fg)
             except Exception:
                 pass
 
             map_win.apply_config_geometry()
-            points_win.apply_config_geometry()
             map_win.show()
             map_win.raise_()
             map_win.activateWindow()
-            points_win.show()
-            points_win.raise_()
+            map_win.apply_open_view()
 
     def on_map_window_closed():
         nonlocal is_standalone_map_mode
-        points_win.hide()
-        is_standalone_map_mode = False
-        restore_game_focus()
-
-    def on_points_window_closed():
-        nonlocal is_standalone_map_mode
-        map_win.hide()
         is_standalone_map_mode = False
         restore_game_focus()
 
     map_win.closed.connect(on_map_window_closed)
-    points_win.closed.connect(on_points_window_closed)
 
     def on_map_hotkey():
         if is_game_foreground("scum", allow_own_process=True):
@@ -311,7 +307,79 @@ def _run():
     controller.hotkey_toggle_map.connect(on_map_hotkey)
     overlay.open_map_requested.connect(toggle_map_and_points)
 
-    settings_dialog = SettingsDialog(cfg, profiles=profiles, players=player_registry)
+    # Clan sync: shared waypoints and friends' positions (the position comes from the clipboard: Ctrl+C in the game)
+    sync = SyncEngine(cfg, points_mgr, default_meta_path(points_mgr.file_path))
+    map_win.set_sync(sync)
+    map_win.drawer.restore_state()
+    settings_dialog = SettingsDialog(cfg, profiles=profiles, players=player_registry, sync=sync)
+
+    def refresh_friend_markers(*_):
+        map_win.canvas.set_friend_markers(sync.markers() if sync.state != "off" else [])
+
+    sync.friends_changed.connect(refresh_friend_markers)
+    sync.status_changed.connect(refresh_friend_markers)
+    marker_timer = QTimer(app)                      # ages fade while nothing new arrives
+    marker_timer.setInterval(1000)
+    marker_timer.timeout.connect(lambda: map_win.isVisible() and refresh_friend_markers())
+    marker_timer.start()
+
+    def on_clipboard_changed():
+        if not (cfg.get("sync_enabled", False) and cfg.get("sync_position", True)):
+            return
+        try:
+            position = parse_position(QApplication.clipboard().text())
+        except Exception:
+            return
+        if position is not None:
+            sync.set_my_position(position)
+
+    QApplication.clipboard().dataChanged.connect(on_clipboard_changed)
+
+    auto_copy_timer = QTimer(app)
+
+    def auto_copy_tick():
+        """Optional (off by default): press Ctrl+C in the game, read the position, give the clipboard back."""
+        if not (cfg.get("sync_enabled", False) and cfg.get("sync_position", True) and cfg.get("sync_auto_copy", False)):
+            return
+        if overlay.in_chat_mode or not is_game_foreground("scum", allow_own_process=False):
+            return
+        try:
+            from pynput.keyboard import Controller, Key
+            clipboard = QApplication.clipboard()
+            mime = clipboard.mimeData()
+            if mime is not None and (mime.hasImage() or mime.hasUrls() or mime.hasHtml()):
+                return                      # the clipboard holds something that is not plain text: leave it alone
+            before = clipboard.text()
+            keyboard = Controller()
+            with keyboard.pressed(Key.ctrl):
+                keyboard.press("c")
+                keyboard.release("c")
+
+            def restore():
+                if parse_position(clipboard.text()) is not None:
+                    clipboard.setText(before) if before else clipboard.clear()
+
+            QTimer.singleShot(450, restore)
+        except Exception:
+            log.warning("Automatic position copy failed", exc_info=True)
+
+    auto_copy_timer.timeout.connect(auto_copy_tick)
+    sync_signature = [None]
+
+    def apply_sync_settings():
+        """Restart the connection only when a clan-sync setting really changed."""
+        signature = tuple(cfg.get(k) for k in ("sync_enabled", "sync_code", "sync_name", "sync_broker", "sync_points",
+                                               "sync_position"))
+        if signature != sync_signature[0]:
+            sync_signature[0] = signature
+            sync.start()
+            refresh_friend_markers()
+        if cfg.get("sync_enabled", False) and cfg.get("sync_auto_copy", False):
+            auto_copy_timer.start(max(3, _cfg_number(cfg, "sync_auto_copy_seconds", 5)) * 1000)
+        else:
+            auto_copy_timer.stop()
+
+    apply_sync_settings()
 
     # UI signals
     controller.translated_ready.connect(overlay.add_message)
@@ -364,7 +432,6 @@ def _run():
         windows_open = (
             overlay.in_chat_mode or
             map_win.isVisible() or
-            points_win.isVisible() or
             settings_dialog.isVisible()
         )
 
@@ -377,8 +444,6 @@ def _run():
             overlay.set_in_chat_mode(False)
         if map_win.isVisible():
             map_win.hide()
-        if points_win.isVisible():
-            points_win.hide()
         if settings_dialog.isVisible():
             settings_dialog.hide()
 
@@ -464,8 +529,6 @@ def _run():
             if not is_standalone_map_mode:
                 if map_win.isVisible():
                     map_win.hide()
-                if points_win.isVisible():
-                    points_win.hide()
         else:
             enable_chat = cfg.get("enable_chat_translator", True)
             if not enable_chat:
@@ -493,6 +556,7 @@ def _run():
 
     def on_settings_changed():
         LocalizationManager.get_instance().set_locale(cfg.get("ui_language", "en"))
+        apply_qt_language(cfg.get("ui_language", "en"))
         history.set_max_entries(_cfg_number(cfg, "history_max_entries", 5000))
         new_hours = _cfg_number(cfg, "update_check_interval_hours", 6, float)
         if new_hours > 0:
@@ -506,13 +570,13 @@ def _run():
         history.set_path(os.path.join(get_user_data_dir(), "chat_history.jsonl")
                          if cfg.get("history_save_to_disk", True) else None)
         map_win.set_on_top(cfg.get("map_on_top", True))
-        points_win.set_on_top(cfg.get("map_on_top", True))
         overlay.update_style()
         map_win.canvas.set_variant(cfg.get("map_variant", "regular"))
         map_win.canvas.toggle_grid(cfg.get("map_show_grid", True))
         map_win.canvas.toggle_keypads(cfg.get("map_show_keypads", True))
         update_registered_hotkeys()
         update_tray_texts()
+        apply_sync_settings()
 
         if log_parser is not None:
             log_parser.set_log_path(cfg.get_resolved_log_path())
@@ -825,6 +889,7 @@ def _run():
     ret = app.exec()
     if not smoke:
         UpdateInstaller.record_clean_exit()
+    sync.stop(quiet=True)
     if log_parser is not None:
         log_parser.stop()
     hotkey_manager.stop()

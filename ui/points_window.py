@@ -474,7 +474,7 @@ class ClearAllDialog(QDialog):
         QPushButton#safe:hover { background-color: #0891b2; }
     """
 
-    def __init__(self, count: int, parent=None):
+    def __init__(self, count: int, parent=None, note: str = ""):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint |
                             Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowCloseButtonHint)
@@ -500,7 +500,7 @@ class ClearAllDialog(QDialog):
         heading = QLabel(tr("points.clear_heading", count=count))
         heading.setObjectName("heading")
         heading.setWordWrap(True)
-        body = QLabel(tr("points.clear_body"))
+        body = QLabel(tr("points.clear_body") + ("\n" + note if note else ""))
         body.setObjectName("body")
         body.setWordWrap(True)
         texts.addWidget(heading)
@@ -547,9 +547,10 @@ class PointsWindow(QWidget):
     closed = pyqtSignal()
     point_focus_requested = pyqtSignal(object)  # MapPoint
 
-    def __init__(self, config_manager: ConfigManager, points_manager: PointsManager, parent=None):
-        # With the map window as its owner the list always stays above the map, however the map is clicked
+    def __init__(self, config_manager: ConfigManager, points_manager: PointsManager, parent=None, embedded: bool = False):
+        # Embedded: the list lives inside another widget (the drawer under the map) instead of being a window
         super().__init__(parent)
+        self.embedded = embedded
         self.cfg = config_manager
         self.points_mgr = points_manager
         self._drag_pos = QPoint()
@@ -558,14 +559,18 @@ class PointsWindow(QWidget):
         self._build_generation = 0
         self._deleted_ids: set = set()
 
-        self.init_window_flags()
+        if not embedded:
+            self.init_window_flags()
         self.init_ui()
-        self.apply_config_geometry()
+        if not embedded:
+            self.apply_config_geometry()
         self._connect_signals()
         self.refresh_list()
 
     def set_on_top(self, on_top: bool):
         """Apply "keep on top of the game" immediately (the flags used to be read only at construction)."""
+        if self.embedded:
+            return
         if bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) == bool(on_top):
             return
         visible = self.isVisible()
@@ -583,11 +588,12 @@ class PointsWindow(QWidget):
 
     def init_ui(self):
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(8, 8, 8, 8)
+        self.main_layout.setContentsMargins(0, 0, 0, 0) if self.embedded else self.main_layout.setContentsMargins(8, 8, 8, 8)
         self.main_layout.setSpacing(0)
 
         self.container = QFrame(self)
-        self.container.setStyleSheet("""
+        self.container.setStyleSheet(
+            "QFrame#points_card { background-color: #0b0f19; border: none; }" if self.embedded else """
             QFrame#points_card {
                 background-color: #0b0f19;
                 border: 2px solid #38bdf8;
@@ -729,6 +735,10 @@ class PointsWindow(QWidget):
         """)
         btn_close.clicked.connect(self.close)
         h.addWidget(btn_close)
+        self.btn_close = btn_close
+        if self.embedded:
+            btn_close.hide()
+            self.lbl_title.hide()                   # the drawer's handle already carries the title and the count
 
         layout.addWidget(top_bar)
 
@@ -755,7 +765,8 @@ class PointsWindow(QWidget):
 
     def _ask_clear_all(self, count: int) -> bool:
         """Double confirmation: the delete button stays disabled until the check box is ticked."""
-        dialog = ClearAllDialog(count, self)
+        note = tr("points.clear_sync_note") if self.cfg.get("sync_enabled", False) and self.cfg.get("sync_points", True) else ""
+        dialog = ClearAllDialog(count, self, note)
         dialog.exec()
         return dialog.confirmed()
 
@@ -811,6 +822,8 @@ class PointsWindow(QWidget):
         grip.setFixedSize(16, 16)
         grip.setStyleSheet("background: transparent; color: #38bdf8;")
         h.addWidget(grip)
+        if self.embedded:
+            grip.hide()
 
         layout.addWidget(bottom_bar)
 
@@ -841,6 +854,12 @@ class PointsWindow(QWidget):
     NEXT_BATCH = 40
 
     def _build_batch(self, generation: int, size: int = NEXT_BATCH):
+        try:
+            self._build_batch_now(generation, size)
+        except RuntimeError:
+            pass          # the window was destroyed while rows were still being built (a pending timer fired late)
+
+    def _build_batch_now(self, generation: int, size: int):
         if generation != self._build_generation:
             return  # a newer refresh replaced this one
         chunk, self._build_queue = self._build_queue[:size], self._build_queue[size:]
@@ -930,6 +949,8 @@ class PointsWindow(QWidget):
     # ──────────────────────── Window dragging ────────────────────────
 
     def mousePressEvent(self, event: QMouseEvent):
+        if self.embedded:
+            return super().mousePressEvent(event)
         if event.button() == Qt.MouseButton.LeftButton and event.pos().y() <= 40:
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
@@ -945,7 +966,8 @@ class PointsWindow(QWidget):
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         self._drag_pos = QPoint()
-        self.save_geometry()
+        if not self.embedded:
+            self.save_geometry()
         super().mouseReleaseEvent(event)
 
     def apply_config_geometry(self):
@@ -983,7 +1005,12 @@ class PointsWindow(QWidget):
             self.cfg.set("points_height", self.height())
 
     def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key.Key_Escape:
+        if event.key() == Qt.Key.Key_Escape and self.embedded:
+            if self.txt_filter.text():
+                self.txt_filter.clear()           # Escape in the drawer only clears the search, it never closes the map
+            event.accept()
+            return
+        if event.key() == Qt.Key.Key_Escape and not self.embedded:
             self.close()
             from utils.win_api import restore_game_focus
             restore_game_focus()

@@ -42,6 +42,7 @@ from core.coordinate_parser import (
     POINT_CATEGORIES,
     MapPoint,
     convert_norm_to_scum,
+    convert_scum_to_norm,
     get_category_info,
     get_category_label,
     get_sector_info,
@@ -50,7 +51,9 @@ from core.i18n import tr
 from core.players import steam_profile_url
 from core.points_manager import PointsManager
 from ui.color_picker import open_safe_color_dialog
+from ui.points_drawer import PointsDrawer
 from ui.screen_utils import has_saved_position, screen_geometry_for
+from ui.theme import MENU_QSS
 
 log = logging.getLogger("scum.map")
 
@@ -270,6 +273,7 @@ class MapCanvasWidget(QWidget):
 
         # Display settings
         self.show_grid = self.cfg.get("map_show_grid", True)
+        self.pvp_mode = bool(self.cfg.get("map_pvp_mode", False))   # waypoints hidden, players only
         self.show_keypads = self.cfg.get("map_show_keypads", True)
         self.active_point_id: Optional[str] = None
 
@@ -286,6 +290,7 @@ class MapCanvasWidget(QWidget):
         self._settle_timer.setSingleShot(True)
         self._settle_timer.setInterval(140)
         self._settle_timer.timeout.connect(self._on_view_settled)
+        self.friend_markers: list = []   # clan sync: [{name, x, y, yaw, age, me}]
         self._tag_font = QFont("Segoe UI Emoji", 9)
         self._tag_font.setBold(True)
         self._emoji_font = QFont("Segoe UI Emoji", 10)
@@ -359,6 +364,12 @@ class MapCanvasWidget(QWidget):
             self.cfg.set("map_variant", variant)
             self.update()
 
+    def set_pvp_mode(self, enabled: bool):
+        self.pvp_mode = bool(enabled)
+        self.cfg.set("map_pvp_mode", self.pvp_mode)
+        self._forget_hover()
+        self.update()
+
     def toggle_grid(self, enabled: bool):
         self.show_grid = enabled
         self.cfg.set("map_show_grid", enabled)
@@ -390,6 +401,18 @@ class MapCanvasWidget(QWidget):
         rendered_h = img_h * self.zoom
         self.pan_x = (w_view - rendered_w) / 2.0
         self.pan_y = (h_view - rendered_h) / 2.0
+        self.update()
+
+    def focus_world(self, x: float, y: float, zoom: Optional[float] = None):
+        """Centre the map on a game position (a player), optionally at a given zoom."""
+        cur_img = self.map_images.get(self.current_variant)
+        if not cur_img or cur_img.isNull():
+            return
+        norm_x, norm_y = convert_scum_to_norm(x, y)
+        if zoom is not None:
+            self.zoom = max(0.2, min(float(zoom), 8.0))
+        self.pan_x = (self.width() / 2.0) - (norm_x * cur_img.width() * self.zoom)
+        self.pan_y = (self.height() / 2.0) - (norm_y * cur_img.height() * self.zoom)
         self.update()
 
     def focus_point(self, point: MapPoint, target_zoom: float = 2.5):
@@ -738,6 +761,8 @@ class MapCanvasWidget(QWidget):
         super().leaveEvent(event)
 
     def _find_marker_at(self, pos: QPoint) -> Optional[MapPoint]:
+        if self.pvp_mode:
+            return None
         cur_img = self.map_images.get(self.current_variant)
         if not cur_img or cur_img.isNull():
             return None
@@ -790,6 +815,7 @@ class MapCanvasWidget(QWidget):
         # 4. Points and markers
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         self._draw_markers(painter, map_rect)
+        self._draw_friends(painter, map_rect)
 
     def _draw_grid(self, painter: QPainter, rect: QRectF):
         mw = rect.width()
@@ -853,12 +879,64 @@ class MapCanvasWidget(QWidget):
                 painter.drawText(QPointF(cx, cy), label)
 
     MARKER_CACHE_LIMIT = 800
+    FRIEND_COLORS = ("#f97316", "#a855f7", "#ec4899", "#eab308", "#14b8a6", "#f43f5e", "#84cc16", "#06b6d4")
+
+    def set_friend_markers(self, markers: list):
+        """Clan sync: positions of the friends (and mine) to draw above the waypoints."""
+        self.friend_markers = list(markers or [])
+        self.update()
+
+    def _draw_friends(self, painter: QPainter, rect: QRectF):
+        if not self.friend_markers:
+            return
+        mw, mh, x0, y0 = rect.width(), rect.height(), rect.x(), rect.y()
+        width, height = self.width(), self.height()
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        for marker in self.friend_markers:
+            nx, ny = convert_scum_to_norm(marker["x"], marker["y"])
+            sx, sy = x0 + nx * mw, y0 + ny * mh
+            if not (-60 <= sx <= width + 60 and -60 <= sy <= height + 60):
+                continue
+            age = float(marker.get("age", 0.0))
+            color = QColor("#22c55e" if marker.get("me") else
+                           self.FRIEND_COLORS[sum(map(ord, str(marker.get("member") or marker["name"]))) % len(self.FRIEND_COLORS)])
+            painter.setOpacity(1.0 if age < 20 else max(0.35, 1.0 - (age - 20) / 140.0))
+            # heading: the game's yaw 0 points to +X (left on this map), growing towards +Y (up)
+            angle = math.radians(float(marker.get("yaw", 0.0)))
+            dx, dy = -math.cos(angle), -math.sin(angle)
+            tip = QPointF(sx + dx * 17, sy + dy * 17)
+            left = QPointF(sx - dy * 6 + dx * 6, sy + dx * 6 + dy * 6)
+            right = QPointF(sx + dy * 6 + dx * 6, sy - dx * 6 + dy * 6)
+            arrow = QPainterPath()
+            arrow.moveTo(tip)
+            arrow.lineTo(left)
+            arrow.lineTo(right)
+            arrow.closeSubpath()
+            painter.setPen(QPen(QColor("#0b0f19"), 1.5))
+            painter.setBrush(QBrush(color))
+            painter.drawPath(arrow)
+            painter.setPen(QPen(QColor("#ffffff"), 2.0))
+            painter.drawEllipse(QPointF(sx, sy), 7.0, 7.0)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(sx, sy), 5.0, 5.0)
+            label = marker["name"] + (f" · {int(age)}s" if age >= 20 else "")
+            fm = QFontMetrics(self._tag_font)
+            tw, th = fm.horizontalAdvance(label) + 12, fm.height() + 4
+            box = QRectF(sx - tw / 2, sy + 12, tw, th)
+            painter.setBrush(QBrush(QColor(11, 15, 25, 200)))
+            painter.setPen(QPen(color, 1.2))
+            painter.drawRoundedRect(box, 5, 5)
+            painter.setFont(self._tag_font)
+            painter.setPen(QColor("#f8fafc"))
+            painter.drawText(box, Qt.AlignmentFlag.AlignCenter, label)
+        painter.restore()
 
     def _draw_markers(self, painter: QPainter, rect: QRectF):
         """Draw the visible pins. Each distinct pin (+ name tag) is rendered once into a small pixmap and then
         only blitted, so panning with many markers on screen costs a few microseconds per marker."""
         points = self.points_mgr.get_points()
-        if not points:
+        if not points or self.pvp_mode:
             return
 
         mw, mh, x0, y0 = rect.width(), rect.height(), rect.x(), rect.y()
@@ -972,6 +1050,7 @@ class MapWindow(QWidget):
     """
     closed = pyqtSignal()
     point_selected = pyqtSignal(object)  # MapPoint
+    pvp_mode_changed = pyqtSignal(bool)   # True: waypoints hidden, players only
 
     def __init__(self, config_manager: ConfigManager, points_manager: PointsManager):
         super().__init__()
@@ -1026,7 +1105,11 @@ class MapWindow(QWidget):
 
         # 2. Top bar
         self._build_top_bar(c_layout)
+        self._build_squad_bar(c_layout)
         c_layout.addWidget(self.canvas, 1)
+        self.drawer = PointsDrawer(self.cfg, self.points_mgr, self.container)
+        c_layout.addWidget(self.drawer)
+        self.drawer.setVisible(not self.canvas.pvp_mode)
 
         # 3. Bottom status bar and resize grip
         self._build_bottom_bar(c_layout)
@@ -1097,6 +1180,16 @@ class MapWindow(QWidget):
             b.clicked.connect(slot)
             return b
 
+        self.btn_pvp = QPushButton()
+        self.btn_pvp.setMinimumHeight(28)
+        self.btn_pvp.setCheckable(True)
+        self.btn_pvp.setChecked(self.canvas.pvp_mode)
+        self.btn_pvp.setStyleSheet(btn_style + "QPushButton:checked { background-color: #7f1d1d; border-color: #ef4444; color: #fff; }")
+        self.btn_pvp.setToolTip(tr("map_window.tip_pvp"))
+        self.btn_pvp.clicked.connect(self._on_pvp_clicked)
+        self._refresh_pvp_button()
+        h.addWidget(self.btn_pvp)
+
         self.btn_var = QPushButton(tr("map_window.variant_satellite") if self.canvas.current_variant == "regular" else tr("map_window.variant_tactical"))
         self.btn_var.setMinimumHeight(28)
         self.btn_var.setStyleSheet(btn_style)
@@ -1110,6 +1203,13 @@ class MapWindow(QWidget):
         self.btn_grid.setStyleSheet(btn_style)
         self.btn_grid.clicked.connect(self.canvas.toggle_grid)
         h.addWidget(self.btn_grid)
+
+        self.btn_me = QPushButton(tr("map_window.btn_me"))
+        self.btn_me.setMinimumHeight(28)
+        self.btn_me.setStyleSheet(btn_style)
+        self.btn_me.setToolTip(tr("map_window.tip_me"))
+        self.btn_me.clicked.connect(self.locate_me)
+        h.addWidget(self.btn_me)
 
         h.addWidget(_icon_btn("+", tr("map_window.tip_zoom_in", default="Zoom in"), lambda: self._step_zoom(1.25)))
         h.addWidget(_icon_btn("\u2212", tr("map_window.tip_zoom_out", default="Zoom out"), lambda: self._step_zoom(0.8)))
@@ -1156,6 +1256,117 @@ class MapWindow(QWidget):
         h.addWidget(grip, 0, Qt.AlignmentFlag.AlignBottom)
 
         layout.addWidget(bottom_bar)
+
+    # ── squad bar: keep zoom on me, show a teammate ──────────────────
+    def set_sync(self, engine):
+        self.sync = engine
+
+    def _build_squad_bar(self, layout: QVBoxLayout):
+        self.sync = getattr(self, "sync", None)
+        bar = QWidget()
+        bar.setStyleSheet("background: transparent;")
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(6, 0, 6, 0)
+        h.setSpacing(6)
+        h.addStretch(1)
+        style = """
+            QPushButton { background-color: #1e293b; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0;
+                          font-size: 11px; font-weight: 600; padding: 4px 10px; }
+            QPushButton:hover { background-color: #0284c7; border-color: #38bdf8; color: white; }
+            QPushButton:checked { background-color: #0c4a6e; border-color: #38bdf8; color: #7dd3fc; }
+        """
+        self.btn_keep = QPushButton(tr("map_window.keep_zoom"))
+        self.btn_keep.setCheckable(True)
+        self.btn_keep.setChecked(bool(self.cfg.get("map_keep_zoom_on_me", False)))
+        self.btn_keep.setMinimumHeight(26)
+        self.btn_keep.setStyleSheet(style)
+        self.btn_keep.setToolTip(tr("map_window.tip_keep_zoom"))
+        self.btn_keep.toggled.connect(self._on_keep_zoom)
+        h.addWidget(self.btn_keep)
+
+        self.btn_squad = QPushButton(tr("map_window.squad"))
+        self.btn_squad.setMinimumHeight(26)
+        self.btn_squad.setStyleSheet(style)
+        self.btn_squad.setToolTip(tr("map_window.tip_squad"))
+        self.btn_squad.clicked.connect(self._show_squad_menu)
+        h.addWidget(self.btn_squad)
+        layout.addWidget(bar)
+
+    def _on_keep_zoom(self, on: bool):
+        self.cfg.set("map_keep_zoom_on_me", bool(on))
+        if on and self.canvas.zoom >= 1.0:
+            self.cfg.set("map_me_zoom", round(self.canvas.zoom, 3))      # "keep THIS zoom"
+
+    def _my_position(self):
+        pos = getattr(getattr(self, "sync", None), "me", None)
+        return pos if pos is not None and getattr(self.sync, "state", "off") != "off" else None
+
+    def _say(self, text: str):
+        self.lbl_cursor.setText(text)
+
+    def locate_me(self):
+        """Zoom to my own position (the one the game copied with Ctrl+C), like the locate button of a map app."""
+        pos = self._my_position()
+        if pos is None:
+            self._say(tr("map_window.me_unknown"))
+            return
+        self.canvas.focus_world(pos.x, pos.y, max(self.canvas.zoom, 3.0))
+        if self.btn_keep.isChecked() and self.canvas.zoom >= 1.0:
+            self.cfg.set("map_me_zoom", round(self.canvas.zoom, 3))
+
+    def apply_open_view(self):
+        """How the map looks when it opens: on me with the saved zoom, or the whole island."""
+        QTimer.singleShot(0, self._apply_open_view_now)
+
+    def _apply_open_view_now(self):
+        pos = self._my_position()
+        if self.cfg.get("map_keep_zoom_on_me", False) and pos is not None:
+            try:
+                zoom = float(self.cfg.get("map_me_zoom", 3.0))
+            except (TypeError, ValueError):
+                zoom = 3.0
+            self.canvas.focus_world(pos.x, pos.y, zoom)
+        else:
+            self.canvas.reset_view()
+
+    def hideEvent(self, event):  # noqa: N802
+        if self.cfg.get("map_keep_zoom_on_me", False) and not event.spontaneous() and self.canvas.zoom >= 1.0:
+            self.cfg.set("map_me_zoom", round(self.canvas.zoom, 3))       # remember the zoom I left
+        super().hideEvent(event)
+
+    def squad_entries(self):
+        """[(label, x, y)] of the squad members who are on the map right now."""
+        members = self.sync.members() if getattr(self, "sync", None) is not None else []
+        out = []
+        for row in members:
+            pos = row.get("position")
+            if row["online"] and pos is not None:
+                out.append((f"{row['display']}   ({int(pos[3])}s)" if pos[3] >= 20 else row["display"], pos[0], pos[1]))
+        return out
+
+    def focus_member(self, x: float, y: float):
+        self.canvas.focus_world(x, y, max(self.canvas.zoom, 3.0))
+
+    def _show_squad_menu(self):
+        menu = QMenu(self)
+        menu.setStyleSheet(MENU_QSS)
+        entries = self.squad_entries()
+        for label, x, y in entries:
+            action = menu.addAction(label.replace("&", "&&"))
+            action.triggered.connect(lambda _=False, px=x, py=y: self.focus_member(px, py))
+        if not entries:
+            empty = menu.addAction(tr("map_window.squad_empty"))
+            empty.setEnabled(False)
+        menu.exec(self.btn_squad.mapToGlobal(self.btn_squad.rect().bottomLeft()))
+
+    def _refresh_pvp_button(self):
+        self.btn_pvp.setText(tr("map_window.pvp_show") if self.canvas.pvp_mode else tr("map_window.pvp_hide"))
+
+    def _on_pvp_clicked(self, checked: bool):
+        self.canvas.set_pvp_mode(checked)
+        self.drawer.setVisible(not checked)
+        self._refresh_pvp_button()
+        self.pvp_mode_changed.emit(checked)
 
     def _toggle_variant(self):
         new_v = "tactical" if self.canvas.current_variant == "regular" else "regular"

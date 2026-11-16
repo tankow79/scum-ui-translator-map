@@ -89,6 +89,7 @@ class PlayersPage(QWidget):
         root.addWidget(section)
 
         self._dirty = False
+        self._registry = registry
         if registry is not None:
             registry.data_changed.connect(self.refresh)
         self._rebuild()
@@ -98,6 +99,14 @@ class PlayersPage(QWidget):
         super().showEvent(event)
         if self._dirty:
             self._rebuild()
+
+    def disconnect_external(self):
+        """Before this page is thrown away (language switch): the registry must stop calling it."""
+        if self._registry is not None:
+            try:
+                self._registry.data_changed.disconnect(self.refresh)
+            except (TypeError, RuntimeError):
+                pass
 
     def refresh(self, *_):
         """Registry changed (or the search text did): rebuild now if visible, otherwise on the next show."""

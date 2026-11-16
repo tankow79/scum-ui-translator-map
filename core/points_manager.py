@@ -5,7 +5,7 @@ import shutil
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
@@ -47,6 +47,8 @@ class PointsManager(QObject):
             file_path = get_portable_config_path("points.json")
         self.file_path = file_path
         self.registry = registry
+        self._timer_lock = threading.Lock()
+        self._save_timer: Optional[threading.Timer] = None
         self._save_lock = threading.Lock()   # snapshot + write are one step: an older snapshot never lands last
         if registry is not None:
             registry.player_changed.connect(self.apply_player_update)
@@ -111,6 +113,24 @@ class PointsManager(QObject):
             atomic_write_json(self._deleted_path, self._deleted_keys)
         except OSError as exc:
             log.warning("Could not save the list of deleted waypoints: %s", exc)
+
+    def save_soon(self, delay: float = 0.6):
+        """Coalesce a burst of writes (a clan sync flood) into one points.json write."""
+        with self._timer_lock:
+            if self._save_timer is not None:
+                return
+            timer = threading.Timer(delay, self.flush)
+            timer.daemon = True
+            self._save_timer = timer
+        timer.start()
+
+    def flush(self):
+        """Write now if a delayed save is pending."""
+        with self._timer_lock:
+            timer, self._save_timer = self._save_timer, None
+        if timer is not None:
+            timer.cancel()
+            self.save()
 
     def save(self):
         """Write points.json atomically (temp file + replace) so a crash never corrupts it."""
@@ -392,6 +412,36 @@ class PointsManager(QObject):
         self._points.clear()
         self.save()
         self.points_cleared.emit()
+
+    def apply_remote(self, data: Dict[str, Any], point_id: Optional[str] = None) -> Optional[MapPoint]:
+        """Create or update a waypoint that a clan member sent (clan sync). Bypasses the chat-replay guards on purpose:
+        the member's copy is the newer truth. Emits the usual signals. Returns None for unusable data."""
+        existing = self.get_point_by_id(point_id) if point_id else None
+        try:
+            fresh = MapPoint.from_dict({**data, "id": existing.id if existing else (data.get("id") or point_id or "")})
+        except ValueError:
+            return None
+        if existing is not None:
+            for name in ("name", "date_time", "raw_coord", "x", "y", "z", "sector", "keypad", "norm_x", "norm_y",
+                         "color", "category"):
+                setattr(existing, name, getattr(fresh, name))
+            if existing.players != fresh.players:
+                existing.players, existing.player_ids = self._resolve_players(fresh.players, existing.player_ids)
+            self.save_soon()
+            self.point_updated.emit(existing)
+            return existing
+        key = self._chat_key(fresh)
+        if key in self._deleted_keys:
+            self._deleted_keys = [k for k in self._deleted_keys if k != key]
+            try:
+                atomic_write_json(self._deleted_path, self._deleted_keys)
+            except OSError as exc:
+                log.warning("Could not save the list of deleted waypoints: %s", exc)
+        fresh.players, fresh.player_ids = self._resolve_players(fresh.players, [])
+        self._points.insert(0, fresh)
+        self.save_soon()
+        self.point_added.emit(fresh)
+        return fresh
 
     def get_points(self) -> List[MapPoint]:
         return list(self._points)

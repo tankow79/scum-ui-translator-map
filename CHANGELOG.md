@@ -3,7 +3,18 @@
 All notable changes to this project are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [2.5.0] - 2026-11-16
+
+### Added
+- **Settings: switching the language no longer closes the window.** The window is translated on the spot (same page, nothing typed is lost), and the overlay, map and tray follow. Qt's own texts (file dialogs, standard buttons) are translated too. The footer now has **Save** (keeps the window open) and **Save and close**.
+- **Steadier clan link:** the squad now talks through both public relay servers at the same time (every message goes to both, duplicates are dropped, the link is "online" while at least one works), so one dead relay no longer splits the squad. An own relay set in Settings is used alone. A burst of remote waypoints is written to disk once instead of once per waypoint, and reconnecting after a dropped session is quick again.
+- **Language follows Windows on the first start:** Ukrainian Windows starts the app in Ukrainian, English Windows in English, any other language in English. The choice can still be changed in Settings. The squad page of Settings is simpler: rarely needed options are behind a "More options" button.
+- **Clan sync (Settings -> Clan sync):** waypoints are shared in real time between friends, wherever they live. Create a clan code, give it to your friends, and everyone sees the same waypoints (add, rename, recolour, delete). It works through an encrypted mailbox (a public MQTT server by default, or your own): the server only sees unreadable bytes. Late joiners receive everything, changes made offline are published when the connection returns, and the newest edit wins.
+- **Live friend positions on the map:** in the game press Ctrl+C - the game copies your position to the clipboard and the app picks it up; friends with the same clan code see your marker (name, direction, fades when old) on their map. Optional "press Ctrl+C for me" (off by default) repeats it automatically.
+- **Map locate button:** "Me" (top right) zooms to your own position like the locate button of a map app. "Keep zoom on me" makes the map open centred on you with the zoom you left; off, it opens as the whole island. A "Squad" drop-down zooms to any squad member who is on the map.
+- **Squad in Settings:** "Create squad" makes a code, "Join squad" takes the code from the clipboard (nothing to host: everyone is equal). The members table lets every player give teammates their own names: you may call a friend "Andriy" while he calls you "Oleg"; each sees only their own names.
+- **The waypoint list is now a drawer under the map:** click the bar at the bottom and it slides up; click again and it slides down and hides.
+- **PvP mode:** a "Hide waypoints" button at the top right of the map hides all waypoints (and the list) so only the players of your squad are shown.
 
 ## [2.4.4] - 2026-11-13
 

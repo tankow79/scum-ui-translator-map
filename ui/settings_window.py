@@ -1,8 +1,9 @@
 import logging
 import os
 import webbrowser
+from typing import Optional
 
-from PyQt6.QtCore import QEvent, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -18,6 +19,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QStackedWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from core.chat_color import parse_nick_list
@@ -38,6 +40,7 @@ from ui.settings_extra_tabs import (
     WordFilterSection,
 )
 from ui.settings_widgets import Section, SettingsPage, SliderRow, WrapCheck, make_button, muted_label
+from ui.sync_page import SyncSection
 from ui.theme import DIALOG_QSS
 from ui.update_dialog import UpdateDialog
 
@@ -219,9 +222,10 @@ class SettingsDialog(QDialog):
 
     NAV_MAX_WIDTH = 230
 
-    def __init__(self, config_manager: ConfigManager, parent=None, profiles=None, players=None):
+    def __init__(self, config_manager: ConfigManager, parent=None, profiles=None, players=None, sync=None):
         super().__init__(parent)
         self.cfg = config_manager
+        self.sync = sync
         self.profiles = profiles
         self.players = players
         LocalizationManager.get_instance().set_locale(self.cfg.get("ui_language", "en"))
@@ -242,7 +246,15 @@ class SettingsDialog(QDialog):
 
     # ── construction ─────────────────────────────────────────────────
     def init_ui(self):
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self._content: Optional[QWidget] = None
+        self._build_content()
+
+    def _build_content(self):
+        content = QWidget(self)
+        root = QVBoxLayout(content)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
@@ -263,6 +275,7 @@ class SettingsDialog(QDialog):
             (tr("settings.nav_appearance"), self._build_appearance_page()),
             (tr("settings.nav_hotkeys"), self._build_hotkeys_page()),
             (tr("settings.nav_players"), self._build_players_page()),
+            (tr("settings.nav_sync"), self._build_sync_page()),
             (tr("settings.nav_profiles"), self._build_profiles_page()),
         ]
         for title, page in pages:
@@ -275,6 +288,7 @@ class SettingsDialog(QDialog):
         self.nav.setFixedWidth(min(self.NAV_MAX_WIDTH, max(150, widest + 56)))
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
+        self.tab_language.language_picked.connect(self._language_picked)
 
         # Footer
         footer = QFrame()
@@ -289,11 +303,41 @@ class SettingsDialog(QDialog):
         fl.addStretch(1)
         self.btn_cancel = make_button(tr("settings.cancel_btn"))
         self.btn_cancel.clicked.connect(self.reject)
-        self.btn_save = make_button(tr("settings.save_btn"), "primary")
-        self.btn_save.clicked.connect(self.save_settings)
+        self.btn_save = make_button(tr("settings.save_btn"))
+        self.btn_save.clicked.connect(lambda: self.save_settings(close=False))
+        self.btn_save_close = make_button(tr("settings.save_close_btn"), "primary")
+        self.btn_save_close.clicked.connect(lambda: self.save_settings(close=True))
         fl.addWidget(self.btn_cancel)
         fl.addWidget(self.btn_save)
+        fl.addWidget(self.btn_save_close)
         root.addWidget(footer)
+        self.layout().addWidget(content)
+        self._content = content
+
+    # ── language switch: the window is translated in place and stays open ──
+    def _language_picked(self, code: str):
+        QTimer.singleShot(0, lambda: self._switch_language(code))     # never rebuild from inside the combo's own signal
+
+    def _switch_language(self, code: str):
+        if code == self.cfg.get("ui_language", "en") and LocalizationManager.get_instance().current_locale == code:
+            return
+        row = self.nav.currentRow()
+        self._write_to_cfg()                       # what was typed so far is kept (the pages are rebuilt from the config)
+        self.cfg.set("ui_language", code)
+        LocalizationManager.get_instance().set_locale(code)
+        self.tab_players.disconnect_external()
+        self.tab_sync.disconnect_external()
+        old, self._content = self._content, None
+        if old is not None:
+            self.layout().removeWidget(old)
+            old.hide()
+            old.setParent(None)
+            old.deleteLater()
+        self._build_content()
+        self.setWindowTitle(tr("settings.title"))
+        self.load_settings()
+        self.nav.setCurrentRow(max(0, min(row, self.nav.count() - 1)))
+        self.settings_changed.emit()               # the overlay, map and tray speak the new language too
 
     def _row(self, *widgets, stretch_last: bool = False) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -487,6 +531,13 @@ class SettingsDialog(QDialog):
         page.finish()
         return page
 
+    def _build_sync_page(self) -> SettingsPage:
+        page = SettingsPage()
+        self.tab_sync = SyncSection(self.sync)
+        page.add_section(self.tab_sync)
+        page.finish()
+        return page
+
     def _build_profiles_page(self) -> SettingsPage:
         page = SettingsPage()
         self.tab_profiles = ProfilesTab(self.profiles)
@@ -511,6 +562,7 @@ class SettingsDialog(QDialog):
         self.section_words.load(self.cfg)
         self.section_detect.load(self.cfg)
         self.section_history.load(self.cfg)
+        self.tab_sync.load(self.cfg)
 
         self.chk_enable_chat.setChecked(self.cfg.get("enable_chat_translator", True))
         self.chk_autostart.setChecked(self.cfg.get("auto_start", True))
@@ -611,14 +663,18 @@ class SettingsDialog(QDialog):
             seen.setdefault(key, name)
         return ", ".join(dict.fromkeys(clashes)) or None
 
-    def save_settings(self):
+    def save_settings(self, close: bool = True):
         clash = self._hotkey_conflict()
         if clash:
             notify(self, tr("settings.title"), tr("settings.hotkey_conflict", names=clash), "warning")
             return                                  # stay in the dialog: one of the actions would stop working
+        if self.tab_sync.chk_enable.isChecked() and not self.tab_sync.code_is_valid():
+            notify(self, tr("settings.title"), tr("sync.need_valid_code"), "warning")
+            return
         self._write_to_cfg()
         self.settings_changed.emit()
-        self.accept()
+        if close:
+            self.accept()
 
     def _write_to_cfg(self):
         """Persist every widget value into the config (without closing the dialog), in one file write."""
@@ -635,6 +691,7 @@ class SettingsDialog(QDialog):
         self.section_words.save(self.cfg)
         self.section_detect.save(self.cfg)
         self.section_history.save(self.cfg)
+        self.tab_sync.save(self.cfg)
 
         self.cfg.set("enable_chat_translator", self.chk_enable_chat.isChecked())
         autostart_val = self.chk_autostart.isChecked()

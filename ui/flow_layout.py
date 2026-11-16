@@ -1,5 +1,6 @@
 """Layout that wraps its items onto new lines when the width is not enough (good for button rows)."""
 
+from PyQt6 import sip
 from PyQt6.QtCore import QPoint, QRect, QSize, Qt
 from PyQt6.QtWidgets import QLayout
 
@@ -39,9 +40,21 @@ class FlowLayout(QLayout):
     def sizeHint(self):  # noqa: N802
         return self.minimumSize()
 
+    def _live_items(self):
+        """The items whose widget still exists: a row whose widgets were deleted must never be measured (it crashes Qt)."""
+        alive = []
+        for item in self._items:
+            if sip.isdeleted(item):
+                continue
+            widget = item.widget()
+            if widget is not None and sip.isdeleted(widget):
+                continue
+            alive.append(item)
+        return alive
+
     def minimumSize(self):  # noqa: N802
         size = QSize()
-        for item in self._items:
+        for item in self._live_items():
             size = size.expandedTo(item.minimumSize())
         margins = self.contentsMargins()
         return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
@@ -50,7 +63,7 @@ class FlowLayout(QLayout):
         m = self.contentsMargins()
         area = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
         x, y, line_height = area.x(), area.y(), 0
-        for item in self._items:
+        for item in self._live_items():
             hint = item.sizeHint()
             if hint.width() > area.width() > 0:
                 hint = QSize(area.width(), hint.height())  # too wide for one line: let the item shrink

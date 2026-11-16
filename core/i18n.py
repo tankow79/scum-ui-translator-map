@@ -103,3 +103,32 @@ class LocalizationManager:
 def tr(key: str, default: Optional[str] = None, **kwargs) -> str:
     """Shortcut for :meth:`LocalizationManager.tr` on the global instance."""
     return LocalizationManager.get_instance().tr(key, default=default, **kwargs)
+
+
+def system_language_code() -> str:
+    """Primary language of Windows ("uk", "en", "de", ...), or "" when it cannot be told."""
+    name = ""
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        buf = ctypes.create_unicode_buffer(85)
+        if kernel32.LCIDToLocaleName(kernel32.GetUserDefaultUILanguage(), buf, 85, 0):
+            name = buf.value
+        elif kernel32.GetUserDefaultLocaleName(buf, 85):
+            name = buf.value
+    except Exception:
+        name = ""
+    if not name:
+        try:
+            import locale
+
+            name = locale.getlocale()[0] or ""
+        except Exception:
+            name = ""
+    return name.replace("_", "-").split("-")[0].strip().lower()
+
+
+def pick_language(system_code: str, available: List[str]) -> str:
+    """The UI language for a first start: the system one when the app has it, English otherwise."""
+    return system_code if system_code and system_code in available else DEFAULT_LOCALE

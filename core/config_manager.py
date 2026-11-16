@@ -34,6 +34,22 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "max_messages": 20,
     "show_original": True,
     "slang_mode": "translate",   # chat abbreviations (GG, BRB ...): "translate", "expand" (English) or "keep"
+    # Clan sync (encrypted, through a public mailbox server): waypoints and live positions shared with friends
+    "map_pvp_mode": False,       # PvP view: waypoints hidden, only the clan/squad players are shown
+    "sync_aliases": {},          # my own names for squad members: member id -> name (each player has their own)
+    "sync_members": {},          # squad members seen so far: member id -> the name they use
+    "map_keep_zoom_on_me": False,    # open the map centred on me with the zoom I left (off: the whole island)
+    "map_me_zoom": 3.0,
+    "points_drawer_open": False,     # the waypoint list under the map is expanded
+    "sync_enabled": False,
+    "sync_code": "",             # the clan code: whoever has it sees the clan's waypoints and positions
+    "sync_name": "",             # name friends see on the map
+    "sync_member_id": "",        # random id of this installation (generated automatically)
+    "sync_points": True,         # share and receive waypoints
+    "sync_position": True,       # share my position (read from the clipboard after Ctrl+C in the game)
+    "sync_auto_copy": False,     # press Ctrl+C in the game by itself every few seconds (off: you press it yourself)
+    "sync_auto_copy_seconds": 5,
+    "sync_broker": "",           # optional own server, e.g. mqtts://host:8883 (empty: the built-in public ones)
     "show_timestamp": True,
     "ignore_own_messages": False,
     "own_nickname": "",
@@ -138,6 +154,7 @@ class ConfigManager:
         self._save_lock = threading.Lock()   # snapshot + write happen together, so an older snapshot never lands last
         self._batch_depth = 0
         self._dirty = False
+        self.language_chosen = False         # False on a first start (no file, or an old one without a language)
         self.load()
 
     def load(self) -> Dict[str, Any]:
@@ -147,6 +164,7 @@ class ConfigManager:
                     data = json.load(f)
                     if not isinstance(data, dict):
                         raise ValueError("config.json is not a JSON object")
+                    self.language_chosen = isinstance(data.get("ui_language"), str) and bool(data.get("ui_language"))
                     self.config = self._sanitize({**copy.deepcopy(DEFAULT_CONFIG), **data})
             except Exception as e:
                 log.warning("Failed to load %s: %s; using default settings.", self.config_path, e)

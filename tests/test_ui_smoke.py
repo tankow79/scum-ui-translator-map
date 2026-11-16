@@ -419,7 +419,7 @@ def test_settings_language_tab_lists_installed_locales_and_saves_choice(qapp, tm
 
     dlg = SettingsDialog(cfg)
     assert LocalizationManager.get_instance().current_locale == "en"
-    assert tr("settings.save_btn") == "💾 Save Settings"
+    assert tr("settings.save_btn") == "💾 Save" and tr("settings.save_close_btn") == "Save and close"
 
     codes = [dlg.tab_language.combo.itemData(i) for i in range(dlg.tab_language.combo.count())]
     assert "en" in codes
