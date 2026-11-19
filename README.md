@@ -4,7 +4,7 @@
 
 [![Release](https://img.shields.io/github/v/release/tankow79/scum-ui-translator-map?style=for-the-badge&color=blue)](https://github.com/tankow79/scum-ui-translator-map/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/tankow79/scum-ui-translator-map/total?style=for-the-badge&color=success)](https://github.com/tankow79/scum-ui-translator-map/releases)
-[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6.svg?style=for-the-badge&logo=windows)](https://microsoft.com)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6.svg?style=for-the-badge&logo=windows)](#install)
 [![CI](https://img.shields.io/github/actions/workflow/status/tankow79/scum-ui-translator-map/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/tankow79/scum-ui-translator-map/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
